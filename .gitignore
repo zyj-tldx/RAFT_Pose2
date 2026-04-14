@@ -1,0 +1,40 @@
+# === Data (too large for git) ===
+7Scenes/
+
+# === Model checkpoints ===
+checkpoints/
+*.pth
+
+# === Generated dataset JSON (can be regenerated) ===
+configs/*_train.json
+
+# === Python ===
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+*.egg
+
+# === Environments ===
+.conda/
+.venv/
+venv/
+env/
+
+# === IDE ===
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# === OS ===
+.DS_Store
+Thumbs.db
+
+# === Logs ===
+runs/
+*.log
+
+# === Misc ===
+*.bak

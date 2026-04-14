@@ -1,0 +1,291 @@
+{
+    "dataset_root": "../7Scenes/data",
+    "output": "chess_train.json",
+    "camera_intrinsics": {
+        "fx": 585.0,
+        "fy": 585.0,
+        "cx": 320.0,
+        "cy": 240.0
+    },
+    "image_size": [480, 640],
+    "depth_scale": 0.001,
+    "strategy": "all_pairs",
+    "strategy_args": {
+        "min_offset": 1,
+        "max_offset": 10,
+        "samples_per_group": 200
+    },
+    "seed": 42,
+    "groups": [
+        {
+            "scene": "chess",
+            "seq": "seq-01",
+            "frame_range": [0, 4],
+            "split": "train"
+        },
+        {
+            "scene": "chess",
+            "seq": "seq-01",
+            "frame_range": [5, 13],
+            "split": "train"
+        },
+        {
+            "scene": "chess",
+            "seq": "seq-01",
+            "frame_range": [14, 20],
+            "split": "train"
+        },
+        {
+            "scene": "chess",
+            "seq": "seq-01",
+            "frame_range": [21, 25],
+            "split": "train"
+        },
+        {
+            "scene": "chess",
+            "seq": "seq-01",
+            "frame_range": [26, 29],
+            "split": "train"
+        },
+        {
+            "scene": "chess",
+            "seq": "seq-01",
+            "frame_range": [30, 34],
+            "split": "train"
+        },
+        {
+            "scene": "chess",
+            "seq": "seq-01",
+            "frame_range": [35, 39],
+            "split": "train"
+        },
+        {
+            "scene": "chess",
+            "seq": "seq-02",
+            "frame_range": [0, 3],
+            "split": "train"
+        },
+        {
+            "scene": "chess",
+            "seq": "seq-02",
+            "frame_range": [4, 6],
+            "split": "train"
+        },
+        {
+            "scene": "chess",
+            "seq": "seq-02",
+            "frame_range": [7, 8],
+            "split": "train"
+        },
+        {
+            "scene": "chess",
+            "seq": "seq-02",
+            "frame_range": [10, 11],
+            "split": "train"
+        },
+        {
+            "scene": "chess",
+            "seq": "seq-02",
+            "frame_range": [12, 14],
+            "split": "train"
+        },
+        {
+            "scene": "chess",
+            "seq": "seq-02",
+            "frame_range": [15, 20],
+            "split": "train"
+        },
+        {
+            "scene": "chess",
+            "seq": "seq-02",
+            "frame_range": [27, 39],
+            "split": "train"
+        },
+        {
+            "scene": "chess",
+            "seq": "seq-03",
+            "frame_range": [0, 2],
+            "split": "train"
+        },
+        {
+            "scene": "chess",
+            "seq": "seq-03",
+            "frame_range": [3, 4],
+            "split": "train"
+        },
+        {
+            "scene": "chess",
+            "seq": "seq-03",
+            "frame_range": [5, 7],
+            "split": "train"
+        },
+        {
+            "scene": "chess",
+            "seq": "seq-03",
+            "frame_range": [8, 12],
+            "split": "train"
+        },
+        {
+            "scene": "chess",
+            "seq": "seq-03",
+            "frame_range": [13, 15],
+            "split": "train"
+        },
+        {
+            "scene": "chess",
+            "seq": "seq-03",
+            "frame_range": [16, 18],
+            "split": "train"
+        },
+        {
+            "scene": "chess",
+            "seq": "seq-03",
+            "frame_range": [19, 22],
+            "split": "train"
+        },
+        {
+            "scene": "chess",
+            "seq": "seq-03",
+            "frame_range": [23, 28],
+            "split": "train"
+        },
+        {
+            "scene": "chess",
+            "seq": "seq-03",
+            "frame_range": [29, 31],
+            "split": "train"
+        },
+        {
+            "scene": "chess",
+            "seq": "seq-03",
+            "frame_range": [32, 36],
+            "split": "train"
+        },
+        {
+            "scene": "chess",
+            "seq": "seq-04",
+            "frame_range": [0, 2],
+            "split": "train"
+        },
+        {
+            "scene": "chess",
+            "seq": "seq-04",
+            "frame_range": [3, 9],
+            "split": "train"
+        },
+        {
+            "scene": "chess",
+            "seq": "seq-04",
+            "frame_range": [11, 16],
+            "split": "train"
+        },
+        {
+            "scene": "chess",
+            "seq": "seq-04",
+            "frame_range": [17, 21],
+            "split": "train"
+        },
+        {
+            "scene": "chess",
+            "seq": "seq-04",
+            "frame_range": [23, 27],
+            "split": "train"
+        },
+        {
+            "scene": "chess",
+            "seq": "seq-04",
+            "frame_range": [28, 33],
+            "split": "train"
+        },
+        {
+            "scene": "chess",
+            "seq": "seq-04",
+            "frame_range": [34, 39],
+            "split": "train"
+        },
+        {
+            "scene": "chess",
+            "seq": "seq-05",
+            "frame_range": [0, 1],
+            "split": "train"
+        },
+        {
+            "scene": "chess",
+            "seq": "seq-05",
+            "frame_range": [2, 7],
+            "split": "train"
+        },
+        {
+            "scene": "chess",
+            "seq": "seq-05",
+            "frame_range": [8, 13],
+            "split": "train"
+        },
+        {
+            "scene": "chess",
+            "seq": "seq-05",
+            "frame_range": [14, 15],
+            "split": "train"
+        },
+        {
+            "scene": "chess",
+            "seq": "seq-05",
+            "frame_range": [16, 27],
+            "split": "train"
+        },
+        {
+            "scene": "chess",
+            "seq": "seq-05",
+            "frame_range": [28, 32],
+            "split": "train"
+        },
+        {
+            "scene": "chess",
+            "seq": "seq-05",
+            "frame_range": [33, 37],
+            "split": "train"
+        },
+        {
+            "scene": "chess",
+            "seq": "seq-06",
+            "frame_range": [0, 7],
+            "split": "val"
+        },
+        {
+            "scene": "chess",
+            "seq": "seq-06",
+            "frame_range": [8, 13],
+            "split": "val"
+        },
+        {
+            "scene": "chess",
+            "seq": "seq-06",
+            "frame_range": [14, 19],
+            "split": "val"
+        },
+        {
+            "scene": "chess",
+            "seq": "seq-06",
+            "frame_range": [20, 24],
+            "split": "val"
+        },
+        {
+            "scene": "chess",
+            "seq": "seq-06",
+            "frame_range": [25, 29],
+            "split": "val"
+        },
+        {
+            "scene": "chess",
+            "seq": "seq-06",
+            "frame_range": [30, 33],
+            "split": "val"
+        },
+        {
+            "scene": "chess",
+            "seq": "seq-06",
+            "frame_range": [34, 39],
+            "split": "val"
+        }
+    ]
+}

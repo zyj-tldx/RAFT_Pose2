@@ -1,0 +1,7479 @@
+{
+  "dataset_root": "/media/pine/新加卷/CMRNext-new/models/RAFT_Pose2/7Scenes/data",
+  "camera_intrinsics": {
+    "fx": 585.0,
+    "fy": 585.0,
+    "cx": 320.0,
+    "cy": 240.0
+  },
+  "image_size": [
+    480,
+    640
+  ],
+  "depth_scale": 0.001,
+  "train_samples": [
+    {
+      "id": 0,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "000"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "001"
+      }
+    },
+    {
+      "id": 1,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "000"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "002"
+      }
+    },
+    {
+      "id": 2,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "000"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "003"
+      }
+    },
+    {
+      "id": 3,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "000"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "004"
+      }
+    },
+    {
+      "id": 4,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "001"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "002"
+      }
+    },
+    {
+      "id": 5,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "001"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "003"
+      }
+    },
+    {
+      "id": 6,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "001"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "004"
+      }
+    },
+    {
+      "id": 7,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "002"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "003"
+      }
+    },
+    {
+      "id": 8,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "002"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "004"
+      }
+    },
+    {
+      "id": 9,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "003"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "004"
+      }
+    },
+    {
+      "id": 10,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "005"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "006"
+      }
+    },
+    {
+      "id": 11,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "005"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "007"
+      }
+    },
+    {
+      "id": 12,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "005"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "008"
+      }
+    },
+    {
+      "id": 13,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "005"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "009"
+      }
+    },
+    {
+      "id": 14,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "005"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "010"
+      }
+    },
+    {
+      "id": 15,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "005"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "011"
+      }
+    },
+    {
+      "id": 16,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "005"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "012"
+      }
+    },
+    {
+      "id": 17,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "005"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "013"
+      }
+    },
+    {
+      "id": 18,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "006"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "007"
+      }
+    },
+    {
+      "id": 19,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "006"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "008"
+      }
+    },
+    {
+      "id": 20,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "006"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "009"
+      }
+    },
+    {
+      "id": 21,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "006"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "010"
+      }
+    },
+    {
+      "id": 22,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "006"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "011"
+      }
+    },
+    {
+      "id": 23,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "006"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "012"
+      }
+    },
+    {
+      "id": 24,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "006"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "013"
+      }
+    },
+    {
+      "id": 25,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "007"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "008"
+      }
+    },
+    {
+      "id": 26,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "007"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "009"
+      }
+    },
+    {
+      "id": 27,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "007"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "010"
+      }
+    },
+    {
+      "id": 28,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "007"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "011"
+      }
+    },
+    {
+      "id": 29,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "007"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "012"
+      }
+    },
+    {
+      "id": 30,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "007"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "013"
+      }
+    },
+    {
+      "id": 31,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "008"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "009"
+      }
+    },
+    {
+      "id": 32,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "008"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "010"
+      }
+    },
+    {
+      "id": 33,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "008"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "011"
+      }
+    },
+    {
+      "id": 34,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "008"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "012"
+      }
+    },
+    {
+      "id": 35,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "008"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "013"
+      }
+    },
+    {
+      "id": 36,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "009"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "010"
+      }
+    },
+    {
+      "id": 37,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "009"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "011"
+      }
+    },
+    {
+      "id": 38,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "009"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "012"
+      }
+    },
+    {
+      "id": 39,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "009"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "013"
+      }
+    },
+    {
+      "id": 40,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "010"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "011"
+      }
+    },
+    {
+      "id": 41,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "010"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "012"
+      }
+    },
+    {
+      "id": 42,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "010"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "013"
+      }
+    },
+    {
+      "id": 43,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "011"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "012"
+      }
+    },
+    {
+      "id": 44,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "011"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "013"
+      }
+    },
+    {
+      "id": 45,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "012"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "013"
+      }
+    },
+    {
+      "id": 46,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "014"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "015"
+      }
+    },
+    {
+      "id": 47,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "014"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "016"
+      }
+    },
+    {
+      "id": 48,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "014"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "017"
+      }
+    },
+    {
+      "id": 49,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "014"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "018"
+      }
+    },
+    {
+      "id": 50,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "014"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "019"
+      }
+    },
+    {
+      "id": 51,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "014"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "020"
+      }
+    },
+    {
+      "id": 52,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "015"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "016"
+      }
+    },
+    {
+      "id": 53,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "015"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "017"
+      }
+    },
+    {
+      "id": 54,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "015"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "018"
+      }
+    },
+    {
+      "id": 55,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "015"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "019"
+      }
+    },
+    {
+      "id": 56,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "015"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "020"
+      }
+    },
+    {
+      "id": 57,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "016"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "017"
+      }
+    },
+    {
+      "id": 58,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "016"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "018"
+      }
+    },
+    {
+      "id": 59,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "016"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "019"
+      }
+    },
+    {
+      "id": 60,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "016"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "020"
+      }
+    },
+    {
+      "id": 61,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "017"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "018"
+      }
+    },
+    {
+      "id": 62,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "017"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "019"
+      }
+    },
+    {
+      "id": 63,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "017"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "020"
+      }
+    },
+    {
+      "id": 64,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "018"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "019"
+      }
+    },
+    {
+      "id": 65,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "018"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "020"
+      }
+    },
+    {
+      "id": 66,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "019"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "020"
+      }
+    },
+    {
+      "id": 67,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "021"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "022"
+      }
+    },
+    {
+      "id": 68,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "021"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "023"
+      }
+    },
+    {
+      "id": 69,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "021"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "024"
+      }
+    },
+    {
+      "id": 70,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "021"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "025"
+      }
+    },
+    {
+      "id": 71,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "022"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "023"
+      }
+    },
+    {
+      "id": 72,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "022"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "024"
+      }
+    },
+    {
+      "id": 73,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "022"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "025"
+      }
+    },
+    {
+      "id": 74,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "023"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "024"
+      }
+    },
+    {
+      "id": 75,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "023"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "025"
+      }
+    },
+    {
+      "id": 76,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "024"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "025"
+      }
+    },
+    {
+      "id": 77,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "026"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "027"
+      }
+    },
+    {
+      "id": 78,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "026"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "028"
+      }
+    },
+    {
+      "id": 79,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "026"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "029"
+      }
+    },
+    {
+      "id": 80,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "027"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "028"
+      }
+    },
+    {
+      "id": 81,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "027"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "029"
+      }
+    },
+    {
+      "id": 82,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "028"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "029"
+      }
+    },
+    {
+      "id": 83,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "030"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "031"
+      }
+    },
+    {
+      "id": 84,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "030"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "032"
+      }
+    },
+    {
+      "id": 85,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "030"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "033"
+      }
+    },
+    {
+      "id": 86,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "030"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "034"
+      }
+    },
+    {
+      "id": 87,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "031"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "032"
+      }
+    },
+    {
+      "id": 88,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "031"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "033"
+      }
+    },
+    {
+      "id": 89,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "031"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "034"
+      }
+    },
+    {
+      "id": 90,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "032"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "033"
+      }
+    },
+    {
+      "id": 91,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "032"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "034"
+      }
+    },
+    {
+      "id": 92,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "033"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "034"
+      }
+    },
+    {
+      "id": 93,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "035"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "036"
+      }
+    },
+    {
+      "id": 94,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "035"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "037"
+      }
+    },
+    {
+      "id": 95,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "035"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "038"
+      }
+    },
+    {
+      "id": 96,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "035"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "039"
+      }
+    },
+    {
+      "id": 97,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "036"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "037"
+      }
+    },
+    {
+      "id": 98,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "036"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "038"
+      }
+    },
+    {
+      "id": 99,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "036"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "039"
+      }
+    },
+    {
+      "id": 100,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "037"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "038"
+      }
+    },
+    {
+      "id": 101,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "037"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "039"
+      }
+    },
+    {
+      "id": 102,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "038"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-01",
+        "frame": "039"
+      }
+    },
+    {
+      "id": 103,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "000"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "001"
+      }
+    },
+    {
+      "id": 104,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "000"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "002"
+      }
+    },
+    {
+      "id": 105,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "000"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "003"
+      }
+    },
+    {
+      "id": 106,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "001"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "002"
+      }
+    },
+    {
+      "id": 107,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "001"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "003"
+      }
+    },
+    {
+      "id": 108,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "002"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "003"
+      }
+    },
+    {
+      "id": 109,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "004"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "005"
+      }
+    },
+    {
+      "id": 110,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "004"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "006"
+      }
+    },
+    {
+      "id": 111,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "005"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "006"
+      }
+    },
+    {
+      "id": 112,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "007"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "008"
+      }
+    },
+    {
+      "id": 113,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "010"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "011"
+      }
+    },
+    {
+      "id": 114,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "012"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "013"
+      }
+    },
+    {
+      "id": 115,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "012"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "014"
+      }
+    },
+    {
+      "id": 116,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "013"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "014"
+      }
+    },
+    {
+      "id": 117,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "015"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "016"
+      }
+    },
+    {
+      "id": 118,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "015"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "017"
+      }
+    },
+    {
+      "id": 119,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "015"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "018"
+      }
+    },
+    {
+      "id": 120,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "015"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "019"
+      }
+    },
+    {
+      "id": 121,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "015"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "020"
+      }
+    },
+    {
+      "id": 122,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "016"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "017"
+      }
+    },
+    {
+      "id": 123,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "016"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "018"
+      }
+    },
+    {
+      "id": 124,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "016"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "019"
+      }
+    },
+    {
+      "id": 125,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "016"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "020"
+      }
+    },
+    {
+      "id": 126,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "017"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "018"
+      }
+    },
+    {
+      "id": 127,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "017"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "019"
+      }
+    },
+    {
+      "id": 128,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "017"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "020"
+      }
+    },
+    {
+      "id": 129,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "018"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "019"
+      }
+    },
+    {
+      "id": 130,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "018"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "020"
+      }
+    },
+    {
+      "id": 131,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "019"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "020"
+      }
+    },
+    {
+      "id": 132,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "027"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "028"
+      }
+    },
+    {
+      "id": 133,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "027"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "029"
+      }
+    },
+    {
+      "id": 134,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "027"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "030"
+      }
+    },
+    {
+      "id": 135,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "027"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "031"
+      }
+    },
+    {
+      "id": 136,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "027"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "032"
+      }
+    },
+    {
+      "id": 137,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "027"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "033"
+      }
+    },
+    {
+      "id": 138,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "027"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "034"
+      }
+    },
+    {
+      "id": 139,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "027"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "035"
+      }
+    },
+    {
+      "id": 140,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "027"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "036"
+      }
+    },
+    {
+      "id": 141,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "027"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "037"
+      }
+    },
+    {
+      "id": 142,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "027"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "038"
+      }
+    },
+    {
+      "id": 143,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "027"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "039"
+      }
+    },
+    {
+      "id": 144,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "028"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "029"
+      }
+    },
+    {
+      "id": 145,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "028"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "030"
+      }
+    },
+    {
+      "id": 146,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "028"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "031"
+      }
+    },
+    {
+      "id": 147,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "028"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "032"
+      }
+    },
+    {
+      "id": 148,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "028"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "033"
+      }
+    },
+    {
+      "id": 149,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "028"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "034"
+      }
+    },
+    {
+      "id": 150,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "028"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "035"
+      }
+    },
+    {
+      "id": 151,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "028"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "036"
+      }
+    },
+    {
+      "id": 152,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "028"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "037"
+      }
+    },
+    {
+      "id": 153,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "028"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "038"
+      }
+    },
+    {
+      "id": 154,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "028"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "039"
+      }
+    },
+    {
+      "id": 155,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "029"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "030"
+      }
+    },
+    {
+      "id": 156,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "029"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "031"
+      }
+    },
+    {
+      "id": 157,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "029"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "032"
+      }
+    },
+    {
+      "id": 158,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "029"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "033"
+      }
+    },
+    {
+      "id": 159,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "029"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "034"
+      }
+    },
+    {
+      "id": 160,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "029"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "035"
+      }
+    },
+    {
+      "id": 161,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "029"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "036"
+      }
+    },
+    {
+      "id": 162,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "029"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "037"
+      }
+    },
+    {
+      "id": 163,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "029"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "038"
+      }
+    },
+    {
+      "id": 164,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "029"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "039"
+      }
+    },
+    {
+      "id": 165,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "030"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "031"
+      }
+    },
+    {
+      "id": 166,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "030"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "032"
+      }
+    },
+    {
+      "id": 167,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "030"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "033"
+      }
+    },
+    {
+      "id": 168,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "030"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "034"
+      }
+    },
+    {
+      "id": 169,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "030"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "035"
+      }
+    },
+    {
+      "id": 170,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "030"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "036"
+      }
+    },
+    {
+      "id": 171,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "030"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "037"
+      }
+    },
+    {
+      "id": 172,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "030"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "038"
+      }
+    },
+    {
+      "id": 173,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "030"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "039"
+      }
+    },
+    {
+      "id": 174,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "031"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "032"
+      }
+    },
+    {
+      "id": 175,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "031"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "033"
+      }
+    },
+    {
+      "id": 176,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "031"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "034"
+      }
+    },
+    {
+      "id": 177,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "031"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "035"
+      }
+    },
+    {
+      "id": 178,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "031"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "036"
+      }
+    },
+    {
+      "id": 179,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "031"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "037"
+      }
+    },
+    {
+      "id": 180,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "031"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "038"
+      }
+    },
+    {
+      "id": 181,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "031"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "039"
+      }
+    },
+    {
+      "id": 182,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "032"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "033"
+      }
+    },
+    {
+      "id": 183,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "032"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "034"
+      }
+    },
+    {
+      "id": 184,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "032"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "035"
+      }
+    },
+    {
+      "id": 185,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "032"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "036"
+      }
+    },
+    {
+      "id": 186,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "032"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "037"
+      }
+    },
+    {
+      "id": 187,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "032"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "038"
+      }
+    },
+    {
+      "id": 188,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "032"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "039"
+      }
+    },
+    {
+      "id": 189,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "033"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "034"
+      }
+    },
+    {
+      "id": 190,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "033"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "035"
+      }
+    },
+    {
+      "id": 191,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "033"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "036"
+      }
+    },
+    {
+      "id": 192,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "033"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "037"
+      }
+    },
+    {
+      "id": 193,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "033"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "038"
+      }
+    },
+    {
+      "id": 194,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "033"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "039"
+      }
+    },
+    {
+      "id": 195,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "034"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "035"
+      }
+    },
+    {
+      "id": 196,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "034"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "036"
+      }
+    },
+    {
+      "id": 197,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "034"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "037"
+      }
+    },
+    {
+      "id": 198,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "034"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "038"
+      }
+    },
+    {
+      "id": 199,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "034"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "039"
+      }
+    },
+    {
+      "id": 200,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "035"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "036"
+      }
+    },
+    {
+      "id": 201,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "035"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "037"
+      }
+    },
+    {
+      "id": 202,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "035"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "038"
+      }
+    },
+    {
+      "id": 203,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "035"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "039"
+      }
+    },
+    {
+      "id": 204,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "036"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "037"
+      }
+    },
+    {
+      "id": 205,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "036"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "038"
+      }
+    },
+    {
+      "id": 206,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "036"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "039"
+      }
+    },
+    {
+      "id": 207,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "037"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "038"
+      }
+    },
+    {
+      "id": 208,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "037"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "039"
+      }
+    },
+    {
+      "id": 209,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "038"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-02",
+        "frame": "039"
+      }
+    },
+    {
+      "id": 210,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-03",
+        "frame": "000"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-03",
+        "frame": "001"
+      }
+    },
+    {
+      "id": 211,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-03",
+        "frame": "000"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-03",
+        "frame": "002"
+      }
+    },
+    {
+      "id": 212,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-03",
+        "frame": "001"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-03",
+        "frame": "002"
+      }
+    },
+    {
+      "id": 213,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-03",
+        "frame": "003"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-03",
+        "frame": "004"
+      }
+    },
+    {
+      "id": 214,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-03",
+        "frame": "005"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-03",
+        "frame": "006"
+      }
+    },
+    {
+      "id": 215,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-03",
+        "frame": "005"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-03",
+        "frame": "007"
+      }
+    },
+    {
+      "id": 216,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-03",
+        "frame": "006"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-03",
+        "frame": "007"
+      }
+    },
+    {
+      "id": 217,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-03",
+        "frame": "008"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-03",
+        "frame": "009"
+      }
+    },
+    {
+      "id": 218,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-03",
+        "frame": "008"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-03",
+        "frame": "010"
+      }
+    },
+    {
+      "id": 219,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-03",
+        "frame": "008"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-03",
+        "frame": "011"
+      }
+    },
+    {
+      "id": 220,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-03",
+        "frame": "008"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-03",
+        "frame": "012"
+      }
+    },
+    {
+      "id": 221,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-03",
+        "frame": "009"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-03",
+        "frame": "010"
+      }
+    },
+    {
+      "id": 222,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-03",
+        "frame": "009"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-03",
+        "frame": "011"
+      }
+    },
+    {
+      "id": 223,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-03",
+        "frame": "009"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-03",
+        "frame": "012"
+      }
+    },
+    {
+      "id": 224,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-03",
+        "frame": "010"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-03",
+        "frame": "011"
+      }
+    },
+    {
+      "id": 225,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-03",
+        "frame": "010"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-03",
+        "frame": "012"
+      }
+    },
+    {
+      "id": 226,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-03",
+        "frame": "011"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-03",
+        "frame": "012"
+      }
+    },
+    {
+      "id": 227,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-03",
+        "frame": "013"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-03",
+        "frame": "014"
+      }
+    },
+    {
+      "id": 228,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-03",
+        "frame": "013"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-03",
+        "frame": "015"
+      }
+    },
+    {
+      "id": 229,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-03",
+        "frame": "014"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-03",
+        "frame": "015"
+      }
+    },
+    {
+      "id": 230,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-03",
+        "frame": "016"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-03",
+        "frame": "017"
+      }
+    },
+    {
+      "id": 231,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-03",
+        "frame": "016"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-03",
+        "frame": "018"
+      }
+    },
+    {
+      "id": 232,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-03",
+        "frame": "017"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-03",
+        "frame": "018"
+      }
+    },
+    {
+      "id": 233,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-03",
+        "frame": "019"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-03",
+        "frame": "020"
+      }
+    },
+    {
+      "id": 234,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-03",
+        "frame": "019"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-03",
+        "frame": "021"
+      }
+    },
+    {
+      "id": 235,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-03",
+        "frame": "019"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-03",
+        "frame": "022"
+      }
+    },
+    {
+      "id": 236,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-03",
+        "frame": "020"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-03",
+        "frame": "021"
+      }
+    },
+    {
+      "id": 237,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-03",
+        "frame": "020"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-03",
+        "frame": "022"
+      }
+    },
+    {
+      "id": 238,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-03",
+        "frame": "021"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-03",
+        "frame": "022"
+      }
+    },
+    {
+      "id": 239,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-03",
+        "frame": "023"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-03",
+        "frame": "024"
+      }
+    },
+    {
+      "id": 240,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-03",
+        "frame": "023"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-03",
+        "frame": "025"
+      }
+    },
+    {
+      "id": 241,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-03",
+        "frame": "023"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-03",
+        "frame": "026"
+      }
+    },
+    {
+      "id": 242,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-03",
+        "frame": "023"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-03",
+        "frame": "027"
+      }
+    },
+    {
+      "id": 243,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-03",
+        "frame": "023"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-03",
+        "frame": "028"
+      }
+    },
+    {
+      "id": 244,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-03",
+        "frame": "024"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-03",
+        "frame": "025"
+      }
+    },
+    {
+      "id": 245,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-03",
+        "frame": "024"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-03",
+        "frame": "026"
+      }
+    },
+    {
+      "id": 246,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-03",
+        "frame": "024"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-03",
+        "frame": "027"
+      }
+    },
+    {
+      "id": 247,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-03",
+        "frame": "024"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-03",
+        "frame": "028"
+      }
+    },
+    {
+      "id": 248,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-03",
+        "frame": "025"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-03",
+        "frame": "026"
+      }
+    },
+    {
+      "id": 249,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-03",
+        "frame": "025"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-03",
+        "frame": "027"
+      }
+    },
+    {
+      "id": 250,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-03",
+        "frame": "025"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-03",
+        "frame": "028"
+      }
+    },
+    {
+      "id": 251,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-03",
+        "frame": "026"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-03",
+        "frame": "027"
+      }
+    },
+    {
+      "id": 252,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-03",
+        "frame": "026"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-03",
+        "frame": "028"
+      }
+    },
+    {
+      "id": 253,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-03",
+        "frame": "027"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-03",
+        "frame": "028"
+      }
+    },
+    {
+      "id": 254,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-03",
+        "frame": "029"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-03",
+        "frame": "030"
+      }
+    },
+    {
+      "id": 255,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-03",
+        "frame": "029"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-03",
+        "frame": "031"
+      }
+    },
+    {
+      "id": 256,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-03",
+        "frame": "030"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-03",
+        "frame": "031"
+      }
+    },
+    {
+      "id": 257,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-03",
+        "frame": "032"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-03",
+        "frame": "033"
+      }
+    },
+    {
+      "id": 258,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-03",
+        "frame": "032"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-03",
+        "frame": "034"
+      }
+    },
+    {
+      "id": 259,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-03",
+        "frame": "032"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-03",
+        "frame": "035"
+      }
+    },
+    {
+      "id": 260,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-03",
+        "frame": "032"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-03",
+        "frame": "036"
+      }
+    },
+    {
+      "id": 261,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-03",
+        "frame": "033"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-03",
+        "frame": "034"
+      }
+    },
+    {
+      "id": 262,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-03",
+        "frame": "033"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-03",
+        "frame": "035"
+      }
+    },
+    {
+      "id": 263,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-03",
+        "frame": "033"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-03",
+        "frame": "036"
+      }
+    },
+    {
+      "id": 264,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-03",
+        "frame": "034"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-03",
+        "frame": "035"
+      }
+    },
+    {
+      "id": 265,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-03",
+        "frame": "034"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-03",
+        "frame": "036"
+      }
+    },
+    {
+      "id": 266,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-03",
+        "frame": "035"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-03",
+        "frame": "036"
+      }
+    },
+    {
+      "id": 267,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "000"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "001"
+      }
+    },
+    {
+      "id": 268,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "000"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "002"
+      }
+    },
+    {
+      "id": 269,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "001"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "002"
+      }
+    },
+    {
+      "id": 270,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "003"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "004"
+      }
+    },
+    {
+      "id": 271,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "003"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "005"
+      }
+    },
+    {
+      "id": 272,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "003"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "006"
+      }
+    },
+    {
+      "id": 273,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "003"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "007"
+      }
+    },
+    {
+      "id": 274,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "003"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "008"
+      }
+    },
+    {
+      "id": 275,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "003"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "009"
+      }
+    },
+    {
+      "id": 276,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "004"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "005"
+      }
+    },
+    {
+      "id": 277,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "004"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "006"
+      }
+    },
+    {
+      "id": 278,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "004"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "007"
+      }
+    },
+    {
+      "id": 279,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "004"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "008"
+      }
+    },
+    {
+      "id": 280,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "004"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "009"
+      }
+    },
+    {
+      "id": 281,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "005"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "006"
+      }
+    },
+    {
+      "id": 282,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "005"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "007"
+      }
+    },
+    {
+      "id": 283,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "005"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "008"
+      }
+    },
+    {
+      "id": 284,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "005"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "009"
+      }
+    },
+    {
+      "id": 285,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "006"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "007"
+      }
+    },
+    {
+      "id": 286,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "006"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "008"
+      }
+    },
+    {
+      "id": 287,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "006"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "009"
+      }
+    },
+    {
+      "id": 288,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "007"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "008"
+      }
+    },
+    {
+      "id": 289,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "007"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "009"
+      }
+    },
+    {
+      "id": 290,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "008"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "009"
+      }
+    },
+    {
+      "id": 291,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "011"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "012"
+      }
+    },
+    {
+      "id": 292,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "011"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "013"
+      }
+    },
+    {
+      "id": 293,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "011"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "014"
+      }
+    },
+    {
+      "id": 294,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "011"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "015"
+      }
+    },
+    {
+      "id": 295,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "011"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "016"
+      }
+    },
+    {
+      "id": 296,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "012"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "013"
+      }
+    },
+    {
+      "id": 297,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "012"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "014"
+      }
+    },
+    {
+      "id": 298,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "012"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "015"
+      }
+    },
+    {
+      "id": 299,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "012"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "016"
+      }
+    },
+    {
+      "id": 300,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "013"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "014"
+      }
+    },
+    {
+      "id": 301,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "013"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "015"
+      }
+    },
+    {
+      "id": 302,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "013"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "016"
+      }
+    },
+    {
+      "id": 303,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "014"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "015"
+      }
+    },
+    {
+      "id": 304,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "014"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "016"
+      }
+    },
+    {
+      "id": 305,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "015"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "016"
+      }
+    },
+    {
+      "id": 306,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "017"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "018"
+      }
+    },
+    {
+      "id": 307,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "017"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "019"
+      }
+    },
+    {
+      "id": 308,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "017"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "020"
+      }
+    },
+    {
+      "id": 309,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "017"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "021"
+      }
+    },
+    {
+      "id": 310,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "018"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "019"
+      }
+    },
+    {
+      "id": 311,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "018"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "020"
+      }
+    },
+    {
+      "id": 312,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "018"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "021"
+      }
+    },
+    {
+      "id": 313,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "019"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "020"
+      }
+    },
+    {
+      "id": 314,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "019"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "021"
+      }
+    },
+    {
+      "id": 315,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "020"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "021"
+      }
+    },
+    {
+      "id": 316,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "023"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "024"
+      }
+    },
+    {
+      "id": 317,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "023"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "025"
+      }
+    },
+    {
+      "id": 318,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "023"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "026"
+      }
+    },
+    {
+      "id": 319,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "023"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "027"
+      }
+    },
+    {
+      "id": 320,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "024"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "025"
+      }
+    },
+    {
+      "id": 321,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "024"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "026"
+      }
+    },
+    {
+      "id": 322,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "024"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "027"
+      }
+    },
+    {
+      "id": 323,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "025"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "026"
+      }
+    },
+    {
+      "id": 324,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "025"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "027"
+      }
+    },
+    {
+      "id": 325,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "026"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "027"
+      }
+    },
+    {
+      "id": 326,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "028"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "029"
+      }
+    },
+    {
+      "id": 327,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "028"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "030"
+      }
+    },
+    {
+      "id": 328,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "028"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "031"
+      }
+    },
+    {
+      "id": 329,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "028"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "032"
+      }
+    },
+    {
+      "id": 330,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "028"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "033"
+      }
+    },
+    {
+      "id": 331,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "029"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "030"
+      }
+    },
+    {
+      "id": 332,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "029"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "031"
+      }
+    },
+    {
+      "id": 333,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "029"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "032"
+      }
+    },
+    {
+      "id": 334,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "029"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "033"
+      }
+    },
+    {
+      "id": 335,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "030"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "031"
+      }
+    },
+    {
+      "id": 336,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "030"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "032"
+      }
+    },
+    {
+      "id": 337,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "030"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "033"
+      }
+    },
+    {
+      "id": 338,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "031"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "032"
+      }
+    },
+    {
+      "id": 339,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "031"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "033"
+      }
+    },
+    {
+      "id": 340,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "032"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "033"
+      }
+    },
+    {
+      "id": 341,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "034"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "035"
+      }
+    },
+    {
+      "id": 342,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "034"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "036"
+      }
+    },
+    {
+      "id": 343,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "034"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "037"
+      }
+    },
+    {
+      "id": 344,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "034"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "038"
+      }
+    },
+    {
+      "id": 345,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "034"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "039"
+      }
+    },
+    {
+      "id": 346,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "035"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "036"
+      }
+    },
+    {
+      "id": 347,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "035"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "037"
+      }
+    },
+    {
+      "id": 348,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "035"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "038"
+      }
+    },
+    {
+      "id": 349,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "035"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "039"
+      }
+    },
+    {
+      "id": 350,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "036"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "037"
+      }
+    },
+    {
+      "id": 351,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "036"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "038"
+      }
+    },
+    {
+      "id": 352,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "036"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "039"
+      }
+    },
+    {
+      "id": 353,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "037"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "038"
+      }
+    },
+    {
+      "id": 354,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "037"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "039"
+      }
+    },
+    {
+      "id": 355,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "038"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-04",
+        "frame": "039"
+      }
+    },
+    {
+      "id": 356,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "000"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "001"
+      }
+    },
+    {
+      "id": 357,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "002"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "003"
+      }
+    },
+    {
+      "id": 358,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "002"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "004"
+      }
+    },
+    {
+      "id": 359,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "002"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "005"
+      }
+    },
+    {
+      "id": 360,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "002"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "006"
+      }
+    },
+    {
+      "id": 361,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "002"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "007"
+      }
+    },
+    {
+      "id": 362,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "003"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "004"
+      }
+    },
+    {
+      "id": 363,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "003"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "005"
+      }
+    },
+    {
+      "id": 364,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "003"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "006"
+      }
+    },
+    {
+      "id": 365,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "003"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "007"
+      }
+    },
+    {
+      "id": 366,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "004"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "005"
+      }
+    },
+    {
+      "id": 367,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "004"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "006"
+      }
+    },
+    {
+      "id": 368,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "004"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "007"
+      }
+    },
+    {
+      "id": 369,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "005"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "006"
+      }
+    },
+    {
+      "id": 370,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "005"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "007"
+      }
+    },
+    {
+      "id": 371,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "006"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "007"
+      }
+    },
+    {
+      "id": 372,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "008"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "009"
+      }
+    },
+    {
+      "id": 373,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "008"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "010"
+      }
+    },
+    {
+      "id": 374,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "008"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "011"
+      }
+    },
+    {
+      "id": 375,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "008"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "012"
+      }
+    },
+    {
+      "id": 376,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "008"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "013"
+      }
+    },
+    {
+      "id": 377,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "009"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "010"
+      }
+    },
+    {
+      "id": 378,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "009"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "011"
+      }
+    },
+    {
+      "id": 379,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "009"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "012"
+      }
+    },
+    {
+      "id": 380,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "009"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "013"
+      }
+    },
+    {
+      "id": 381,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "010"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "011"
+      }
+    },
+    {
+      "id": 382,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "010"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "012"
+      }
+    },
+    {
+      "id": 383,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "010"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "013"
+      }
+    },
+    {
+      "id": 384,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "011"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "012"
+      }
+    },
+    {
+      "id": 385,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "011"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "013"
+      }
+    },
+    {
+      "id": 386,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "012"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "013"
+      }
+    },
+    {
+      "id": 387,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "014"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "015"
+      }
+    },
+    {
+      "id": 388,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "016"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "017"
+      }
+    },
+    {
+      "id": 389,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "016"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "018"
+      }
+    },
+    {
+      "id": 390,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "016"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "019"
+      }
+    },
+    {
+      "id": 391,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "016"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "020"
+      }
+    },
+    {
+      "id": 392,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "016"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "021"
+      }
+    },
+    {
+      "id": 393,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "016"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "022"
+      }
+    },
+    {
+      "id": 394,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "016"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "023"
+      }
+    },
+    {
+      "id": 395,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "016"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "024"
+      }
+    },
+    {
+      "id": 396,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "016"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "025"
+      }
+    },
+    {
+      "id": 397,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "016"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "026"
+      }
+    },
+    {
+      "id": 398,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "016"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "027"
+      }
+    },
+    {
+      "id": 399,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "017"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "018"
+      }
+    },
+    {
+      "id": 400,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "017"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "019"
+      }
+    },
+    {
+      "id": 401,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "017"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "020"
+      }
+    },
+    {
+      "id": 402,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "017"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "021"
+      }
+    },
+    {
+      "id": 403,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "017"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "022"
+      }
+    },
+    {
+      "id": 404,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "017"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "023"
+      }
+    },
+    {
+      "id": 405,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "017"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "024"
+      }
+    },
+    {
+      "id": 406,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "017"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "025"
+      }
+    },
+    {
+      "id": 407,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "017"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "026"
+      }
+    },
+    {
+      "id": 408,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "017"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "027"
+      }
+    },
+    {
+      "id": 409,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "018"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "019"
+      }
+    },
+    {
+      "id": 410,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "018"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "020"
+      }
+    },
+    {
+      "id": 411,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "018"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "021"
+      }
+    },
+    {
+      "id": 412,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "018"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "022"
+      }
+    },
+    {
+      "id": 413,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "018"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "023"
+      }
+    },
+    {
+      "id": 414,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "018"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "024"
+      }
+    },
+    {
+      "id": 415,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "018"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "025"
+      }
+    },
+    {
+      "id": 416,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "018"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "026"
+      }
+    },
+    {
+      "id": 417,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "018"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "027"
+      }
+    },
+    {
+      "id": 418,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "019"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "020"
+      }
+    },
+    {
+      "id": 419,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "019"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "021"
+      }
+    },
+    {
+      "id": 420,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "019"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "022"
+      }
+    },
+    {
+      "id": 421,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "019"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "023"
+      }
+    },
+    {
+      "id": 422,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "019"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "024"
+      }
+    },
+    {
+      "id": 423,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "019"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "025"
+      }
+    },
+    {
+      "id": 424,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "019"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "026"
+      }
+    },
+    {
+      "id": 425,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "019"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "027"
+      }
+    },
+    {
+      "id": 426,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "020"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "021"
+      }
+    },
+    {
+      "id": 427,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "020"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "022"
+      }
+    },
+    {
+      "id": 428,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "020"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "023"
+      }
+    },
+    {
+      "id": 429,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "020"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "024"
+      }
+    },
+    {
+      "id": 430,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "020"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "025"
+      }
+    },
+    {
+      "id": 431,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "020"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "026"
+      }
+    },
+    {
+      "id": 432,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "020"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "027"
+      }
+    },
+    {
+      "id": 433,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "021"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "022"
+      }
+    },
+    {
+      "id": 434,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "021"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "023"
+      }
+    },
+    {
+      "id": 435,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "021"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "024"
+      }
+    },
+    {
+      "id": 436,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "021"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "025"
+      }
+    },
+    {
+      "id": 437,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "021"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "026"
+      }
+    },
+    {
+      "id": 438,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "021"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "027"
+      }
+    },
+    {
+      "id": 439,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "022"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "023"
+      }
+    },
+    {
+      "id": 440,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "022"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "024"
+      }
+    },
+    {
+      "id": 441,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "022"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "025"
+      }
+    },
+    {
+      "id": 442,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "022"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "026"
+      }
+    },
+    {
+      "id": 443,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "022"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "027"
+      }
+    },
+    {
+      "id": 444,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "023"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "024"
+      }
+    },
+    {
+      "id": 445,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "023"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "025"
+      }
+    },
+    {
+      "id": 446,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "023"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "026"
+      }
+    },
+    {
+      "id": 447,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "023"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "027"
+      }
+    },
+    {
+      "id": 448,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "024"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "025"
+      }
+    },
+    {
+      "id": 449,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "024"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "026"
+      }
+    },
+    {
+      "id": 450,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "024"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "027"
+      }
+    },
+    {
+      "id": 451,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "025"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "026"
+      }
+    },
+    {
+      "id": 452,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "025"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "027"
+      }
+    },
+    {
+      "id": 453,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "026"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "027"
+      }
+    },
+    {
+      "id": 454,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "028"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "029"
+      }
+    },
+    {
+      "id": 455,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "028"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "030"
+      }
+    },
+    {
+      "id": 456,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "028"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "031"
+      }
+    },
+    {
+      "id": 457,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "028"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "032"
+      }
+    },
+    {
+      "id": 458,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "029"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "030"
+      }
+    },
+    {
+      "id": 459,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "029"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "031"
+      }
+    },
+    {
+      "id": 460,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "029"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "032"
+      }
+    },
+    {
+      "id": 461,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "030"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "031"
+      }
+    },
+    {
+      "id": 462,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "030"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "032"
+      }
+    },
+    {
+      "id": 463,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "031"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "032"
+      }
+    },
+    {
+      "id": 464,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "033"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "034"
+      }
+    },
+    {
+      "id": 465,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "033"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "035"
+      }
+    },
+    {
+      "id": 466,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "033"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "036"
+      }
+    },
+    {
+      "id": 467,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "033"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "037"
+      }
+    },
+    {
+      "id": 468,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "034"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "035"
+      }
+    },
+    {
+      "id": 469,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "034"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "036"
+      }
+    },
+    {
+      "id": 470,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "034"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "037"
+      }
+    },
+    {
+      "id": 471,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "035"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "036"
+      }
+    },
+    {
+      "id": 472,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "035"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "037"
+      }
+    },
+    {
+      "id": 473,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "036"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-05",
+        "frame": "037"
+      }
+    }
+  ],
+  "val_samples": [
+    {
+      "id": 0,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "000"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "001"
+      }
+    },
+    {
+      "id": 1,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "000"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "002"
+      }
+    },
+    {
+      "id": 2,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "000"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "003"
+      }
+    },
+    {
+      "id": 3,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "000"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "004"
+      }
+    },
+    {
+      "id": 4,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "000"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "005"
+      }
+    },
+    {
+      "id": 5,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "000"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "006"
+      }
+    },
+    {
+      "id": 6,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "000"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "007"
+      }
+    },
+    {
+      "id": 7,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "001"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "002"
+      }
+    },
+    {
+      "id": 8,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "001"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "003"
+      }
+    },
+    {
+      "id": 9,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "001"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "004"
+      }
+    },
+    {
+      "id": 10,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "001"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "005"
+      }
+    },
+    {
+      "id": 11,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "001"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "006"
+      }
+    },
+    {
+      "id": 12,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "001"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "007"
+      }
+    },
+    {
+      "id": 13,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "002"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "003"
+      }
+    },
+    {
+      "id": 14,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "002"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "004"
+      }
+    },
+    {
+      "id": 15,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "002"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "005"
+      }
+    },
+    {
+      "id": 16,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "002"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "006"
+      }
+    },
+    {
+      "id": 17,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "002"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "007"
+      }
+    },
+    {
+      "id": 18,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "003"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "004"
+      }
+    },
+    {
+      "id": 19,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "003"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "005"
+      }
+    },
+    {
+      "id": 20,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "003"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "006"
+      }
+    },
+    {
+      "id": 21,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "003"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "007"
+      }
+    },
+    {
+      "id": 22,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "004"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "005"
+      }
+    },
+    {
+      "id": 23,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "004"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "006"
+      }
+    },
+    {
+      "id": 24,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "004"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "007"
+      }
+    },
+    {
+      "id": 25,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "005"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "006"
+      }
+    },
+    {
+      "id": 26,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "005"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "007"
+      }
+    },
+    {
+      "id": 27,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "006"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "007"
+      }
+    },
+    {
+      "id": 28,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "008"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "009"
+      }
+    },
+    {
+      "id": 29,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "008"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "010"
+      }
+    },
+    {
+      "id": 30,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "008"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "011"
+      }
+    },
+    {
+      "id": 31,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "008"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "012"
+      }
+    },
+    {
+      "id": 32,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "008"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "013"
+      }
+    },
+    {
+      "id": 33,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "009"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "010"
+      }
+    },
+    {
+      "id": 34,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "009"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "011"
+      }
+    },
+    {
+      "id": 35,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "009"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "012"
+      }
+    },
+    {
+      "id": 36,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "009"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "013"
+      }
+    },
+    {
+      "id": 37,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "010"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "011"
+      }
+    },
+    {
+      "id": 38,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "010"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "012"
+      }
+    },
+    {
+      "id": 39,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "010"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "013"
+      }
+    },
+    {
+      "id": 40,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "011"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "012"
+      }
+    },
+    {
+      "id": 41,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "011"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "013"
+      }
+    },
+    {
+      "id": 42,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "012"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "013"
+      }
+    },
+    {
+      "id": 43,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "014"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "015"
+      }
+    },
+    {
+      "id": 44,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "014"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "016"
+      }
+    },
+    {
+      "id": 45,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "014"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "017"
+      }
+    },
+    {
+      "id": 46,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "014"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "018"
+      }
+    },
+    {
+      "id": 47,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "014"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "019"
+      }
+    },
+    {
+      "id": 48,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "015"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "016"
+      }
+    },
+    {
+      "id": 49,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "015"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "017"
+      }
+    },
+    {
+      "id": 50,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "015"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "018"
+      }
+    },
+    {
+      "id": 51,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "015"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "019"
+      }
+    },
+    {
+      "id": 52,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "016"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "017"
+      }
+    },
+    {
+      "id": 53,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "016"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "018"
+      }
+    },
+    {
+      "id": 54,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "016"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "019"
+      }
+    },
+    {
+      "id": 55,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "017"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "018"
+      }
+    },
+    {
+      "id": 56,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "017"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "019"
+      }
+    },
+    {
+      "id": 57,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "018"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "019"
+      }
+    },
+    {
+      "id": 58,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "020"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "021"
+      }
+    },
+    {
+      "id": 59,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "020"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "022"
+      }
+    },
+    {
+      "id": 60,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "020"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "023"
+      }
+    },
+    {
+      "id": 61,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "020"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "024"
+      }
+    },
+    {
+      "id": 62,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "021"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "022"
+      }
+    },
+    {
+      "id": 63,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "021"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "023"
+      }
+    },
+    {
+      "id": 64,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "021"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "024"
+      }
+    },
+    {
+      "id": 65,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "022"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "023"
+      }
+    },
+    {
+      "id": 66,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "022"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "024"
+      }
+    },
+    {
+      "id": 67,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "023"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "024"
+      }
+    },
+    {
+      "id": 68,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "025"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "026"
+      }
+    },
+    {
+      "id": 69,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "025"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "027"
+      }
+    },
+    {
+      "id": 70,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "025"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "028"
+      }
+    },
+    {
+      "id": 71,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "025"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "029"
+      }
+    },
+    {
+      "id": 72,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "026"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "027"
+      }
+    },
+    {
+      "id": 73,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "026"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "028"
+      }
+    },
+    {
+      "id": 74,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "026"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "029"
+      }
+    },
+    {
+      "id": 75,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "027"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "028"
+      }
+    },
+    {
+      "id": 76,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "027"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "029"
+      }
+    },
+    {
+      "id": 77,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "028"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "029"
+      }
+    },
+    {
+      "id": 78,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "030"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "031"
+      }
+    },
+    {
+      "id": 79,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "030"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "032"
+      }
+    },
+    {
+      "id": 80,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "030"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "033"
+      }
+    },
+    {
+      "id": 81,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "031"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "032"
+      }
+    },
+    {
+      "id": 82,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "031"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "033"
+      }
+    },
+    {
+      "id": 83,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "032"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "033"
+      }
+    },
+    {
+      "id": 84,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "034"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "035"
+      }
+    },
+    {
+      "id": 85,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "034"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "036"
+      }
+    },
+    {
+      "id": 86,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "034"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "037"
+      }
+    },
+    {
+      "id": 87,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "034"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "038"
+      }
+    },
+    {
+      "id": 88,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "034"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "039"
+      }
+    },
+    {
+      "id": 89,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "035"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "036"
+      }
+    },
+    {
+      "id": 90,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "035"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "037"
+      }
+    },
+    {
+      "id": 91,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "035"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "038"
+      }
+    },
+    {
+      "id": 92,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "035"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "039"
+      }
+    },
+    {
+      "id": 93,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "036"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "037"
+      }
+    },
+    {
+      "id": 94,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "036"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "038"
+      }
+    },
+    {
+      "id": 95,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "036"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "039"
+      }
+    },
+    {
+      "id": 96,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "037"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "038"
+      }
+    },
+    {
+      "id": 97,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "037"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "039"
+      }
+    },
+    {
+      "id": 98,
+      "image": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "038"
+      },
+      "depth": {
+        "scene": "chess",
+        "seq": "seq-06",
+        "frame": "039"
+      }
+    }
+  ],
+  "metadata": {
+    "definition_file": "configs/chess_definition.json",
+    "strategy": "all_pairs",
+    "strategy_args": {
+      "min_offset": 1,
+      "max_offset": 10,
+      "samples_per_group": 200
+    },
+    "total_train": 474,
+    "total_val": 99,
+    "seed": 42
+  }
+}
