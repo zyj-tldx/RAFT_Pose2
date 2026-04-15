@@ -295,7 +295,7 @@ def parse_args():
                         choices=["cosine", "step", "none"])
 
     # Loss weights
-    parser.add_argument("--rot_weight", type=float, default=1.0,
+    parser.add_argument("--rot_weight", type=float, default=5.0,
                         help="Weight for rotation loss")
     parser.add_argument("--trans_weight", type=float, default=10.0,
                         help="Weight for translation loss")
