@@ -261,6 +261,9 @@ class RAFTPose(nn.Module):
             pose_samples: Pose matrices of shape (B, N, 4, 4)
             confidence: Confidence scores of shape (B, N)
             corr_feats: Correlation features of shape (B*N, C_corr, H_feat, W_feat)
+            direction_vecs: Direction encoding of shape (B, N, 6)
+                           Each row is [rot_axis_x, rot_axis_y, rot_axis_z,
+                                        trans_dir_x, trans_dir_y, trans_dir_z]
         """
         B = current_pose.shape[0]
         device = current_pose.device
@@ -367,7 +370,12 @@ class RAFTPose(nn.Module):
         )
         # corr_feats: (B*actual_N, C_corr, H_feat, W_feat), confidence: (B, actual_N)
 
-        return pose_samples, confidence, corr_feats
+        # Build direction encoding vectors: (B, N, 6)
+        # [rot_axis_x, rot_axis_y, rot_axis_z, trans_dir_x, trans_dir_y, trans_dir_z]
+        dir_vecs = torch.cat([rot_axes, trans_dirs], dim=1)  # (actual_N, 6)
+        dir_vecs = dir_vecs.unsqueeze(0).expand(B, -1, -1)  # (B, actual_N, 6)
+
+        return pose_samples, confidence, corr_feats, dir_vecs
 
     @staticmethod
     def _batch_quaternion_multiply(q1, q2):
@@ -484,12 +492,13 @@ class RAFTPose(nn.Module):
         for it in range(self.num_iterations):
             # Generate directional pose samples (fixed directions based on num_pose_samples)
             # and evaluate correlation confidence for each
-            pose_samples, confidence, corr_feats = self.generate_directional_samples(
+            pose_samples, confidence, corr_feats, dir_vecs = self.generate_directional_samples(
                 current_pose, depth, intrinsic_depth, intrinsic_rgb,
                 base_step_rot=current_step,
                 base_step_trans=current_step
             )  # pose_samples: (B, N, 4, 4), confidence: (B, N)
             # corr_feats: (B*N, C_corr, H_feat, W_feat)
+            # dir_vecs: (B, N, 6) — direction encoding per sample
             # All N samples are projected and evaluated in parallel (batched)
 
             # Select best sample by confidence score
@@ -539,23 +548,55 @@ class RAFTPose(nn.Module):
                 # Weighted average: (B, K, C_corr, H, W) * (B, K, 1, 1, 1) -> sum -> (B, C_corr, H, W)
                 weighted_feats = (topk_feats * topk_weights.unsqueeze(2).unsqueeze(3).unsqueeze(4)).sum(dim=1)
                 aggregated_corr = weighted_feats  # (B, C_corr, H, W)
+
+                # Weighted average of direction vectors: (B, K, 6) * (B, K, 1) -> sum -> (B, 6)
+                topk_dirs = dir_vecs.gather(1, topk_indices.unsqueeze(2).expand(-1, -1, 6))  # (B, K, 6)
+                direction_encoding = (topk_dirs * topk_weights.unsqueeze(2)).sum(dim=1)  # (B, 6)
             else:
                 # K=1: select best sample only (original behavior)
                 aggregated_corr = all_corr[torch.arange(batch_size, device=device), best_idx]  # (B, C_corr, H, W)
+                direction_encoding = dir_vecs[torch.arange(batch_size, device=device), best_idx]  # (B, 6)
 
-            # Predict pose delta using aggregated correlation features
+            # Predict pose delta using aggregated correlation features + direction encoding
+            # Output is 6D: [rx, ry, rz, tx, ty, tz] (rotation vector + translation)
             pose_delta, hidden_state = self.pose_update_net(
                 aggregated_corr,
                 context_feat,
-                hidden_state
-            )  # pose_delta: (B, 7, H, W)
+                hidden_state,
+                direction_encoding=direction_encoding
+            )  # pose_delta: (B, 6, H, W)
             
             # Aggregate pose delta predictions (spatial pooling)
-            pose_delta_avg = pose_delta.mean(dim=[2, 3])  # (B, 7)
+            pose_delta_avg = pose_delta.mean(dim=[2, 3])  # (B, 6)
             
-            # Update pose estimate using se(3) Lie algebra
+            # Convert rotation vector (rx, ry, rz) to quaternion delta
+            # rotation vector = axis * angle, so ||r|| = angle
+            rot_vec = pose_delta_avg[:, :3]  # (B, 3)
+            dt = pose_delta_avg[:, 3:6]      # (B, 3)
+            
+            # Clamp rotation angle to avoid instability (max ~30° per iteration)
+            angle = rot_vec.norm(dim=1, keepdim=True)  # (B, 1)
+            angle_clamped = angle.clamp(max=0.5)  # (B, 1)
+            rot_vec = rot_vec / angle.clamp(min=1e-8) * angle_clamped  # (B, 3)
+            
+            # Rodrigues' formula: rotation vector → quaternion
+            # When angle ≈ 0, use identity quaternion to avoid 0/0 in gradient
+            small_angle_mask = (angle < 1e-6)  # (B, 1)
+            
+            half_angle = angle_clamped / 2.0  # (B, 1)
+            sin_ha = torch.sin(half_angle)  # (B, 1)
+            cos_ha = torch.cos(half_angle)  # (B, 1)
+            axis = rot_vec / angle_clamped.clamp(min=1e-8)  # (B, 3), unit axis
+            dq = torch.cat([cos_ha, axis * sin_ha], dim=1)  # (B, 4)
+            
+            # For near-zero angles, use identity quaternion [1, 0, 0, 0]
+            # This avoids NaN gradients from the 0/0 in axis computation
+            identity_dq = torch.zeros_like(dq)
+            identity_dq[:, 0] = 1.0
+            dq = torch.where(small_angle_mask.expand_as(dq), identity_dq, dq)
+            
+            # Update pose estimate: T_new = T_cur * Delta
             q_cur, t_cur = current_pose[:, :4], current_pose[:, 4:7]
-            dq, dt = pose_delta_avg[:, :4], pose_delta_avg[:, 4:7]
             q_new, t_new = apply_pose_update((q_cur, t_cur), (dq, dt))
             q_new = F.normalize(q_new, dim=1)
             current_pose = torch.cat([q_new, t_new], dim=1)  # (B, 7)

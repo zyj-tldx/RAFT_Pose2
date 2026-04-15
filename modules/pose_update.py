@@ -102,7 +102,15 @@ class ResidualBlock(nn.Module):
 
 class PoseRegressionHead(nn.Module):
     """
-    Pose regression head that predicts 7D pose updates (quaternion + translation).
+    Pose regression head that predicts 6D pose updates (rotation vector + translation).
+
+    Outputs a 6D vector: [rx, ry, rz, tx, ty, tz]
+    - (rx, ry, rz): rotation vector (axis * angle), converted to quaternion delta
+    - (tx, ty, tz): translation delta in meters
+
+    With zero initialization (bias=0), the output is all zeros, which maps to
+    identity quaternion delta + zero translation — i.e. no pose change.
+    This ensures the untrained model does not corrupt the initial pose.
     """
     def __init__(self, hidden_dim, num_layers=3):
         """
@@ -118,8 +126,8 @@ class PoseRegressionHead(nn.Module):
             out_dim = hidden_dim
             self.conv_blocks.append(ResidualBlock(in_dim, out_dim))
         
-        # Output layer: 7 channels for pose (quaternion w,x,y,z + translation x,y,z)
-        self.pose_conv = nn.Conv2d(hidden_dim, 7, 3, 1, 1)
+        # Output layer: 6 channels (3 rotation + 3 translation)
+        self.pose_conv = nn.Conv2d(hidden_dim, 6, 3, 1, 1)
         
         self.reset_parameters()
     
@@ -131,8 +139,8 @@ class PoseRegressionHead(nn.Module):
             elif 'bias' in name and name != 'pose_conv.bias':
                 nn.init.zeros_(param)
         
-        # Initialize output layer to predict small updates
-        nn.init.xavier_normal_(self.pose_conv.weight)
+        # Zero initialization: output = 0 → identity delta (no pose change)
+        nn.init.zeros_(self.pose_conv.weight)
         nn.init.zeros_(self.pose_conv.bias)
     
     def forward(self, x):
@@ -141,18 +149,13 @@ class PoseRegressionHead(nn.Module):
             x: Input features of shape (B, hidden_dim, H, W)
         
         Returns:
-            pose_delta: Pose update of shape (B, 7, H, W)
+            pose_delta: Raw 6D pose update of shape (B, 6, H, W)
+                       [rx, ry, rz, tx, ty, tz]
         """
         for block in self.conv_blocks:
             x = block(x)
         
-        pose_delta = self.pose_conv(x)
-        
-        # Normalize quaternion to unit length (avoid inplace op for autograd)
-        quat_delta = F.normalize(pose_delta[:, :4, :, :], dim=1)
-        trans_delta = pose_delta[:, 4:, :, :]
-        pose_delta = torch.cat([quat_delta, trans_delta], dim=1)
-        
+        pose_delta = self.pose_conv(x)  # (B, 6, H, W)
         return pose_delta
 
 
@@ -192,6 +195,14 @@ class PoseUpdateNet(nn.Module):
             nn.ReLU(inplace=True)
         )
         
+        # Project 6D direction encoding to hidden dimension
+        # Direction encoding: [rot_axis(3), trans_dir(3)] tells the network
+        # which sampling direction produced the correlation features
+        self.dir_proj = nn.Sequential(
+            nn.Linear(6, hidden_dim),
+            nn.ReLU(inplace=True)
+        )
+        
         # ConvGRU for iterative refinement
         self.gru = ConvGRU(hidden_dim, hidden_dim, kernel_size=3)
         
@@ -206,15 +217,18 @@ class PoseUpdateNet(nn.Module):
         # Pose regression head
         self.pose_head = PoseRegressionHead(hidden_dim, num_layers=num_layers)
     
-    def forward(self, corr_feat, context_feat, hidden_state=None):
+    def forward(self, corr_feat, context_feat, hidden_state=None, direction_encoding=None):
         """
         Args:
             corr_feat: Correlation features of shape (B, corr_dim, H, W)
             context_feat: Context features from encoder of shape (B, context_dim, H, W)
             hidden_state: Previous hidden state of shape (B, hidden_dim, H, W), optional
+            direction_encoding: Direction encoding of shape (B, 6), optional.
+                [rot_axis_x, rot_axis_y, rot_axis_z, trans_dir_x, trans_dir_y, trans_dir_z]
+                Tells the network which sampling direction produced the correlation features.
         
         Returns:
-            pose_delta: Predicted pose update of shape (B, 7, H, W)
+            pose_delta: Predicted pose update of shape (B, 6, H, W)
             hidden_state: Updated hidden state of shape (B, hidden_dim, H, W)
         """
         # Project correlation features
@@ -223,12 +237,24 @@ class PoseUpdateNet(nn.Module):
         # Project context features
         context_proj = self.context_proj(context_feat)
         
+        # Inject direction encoding if provided
+        # Project 6D direction vector to hidden_dim and broadcast spatially
+        if direction_encoding is not None:
+            B = direction_encoding.shape[0]
+            H, W = corr_proj.shape[2], corr_proj.shape[3]
+            # (B, 6) -> (B, hidden_dim) -> (B, hidden_dim, 1, 1) -> broadcast
+            dir_feat = self.dir_proj(direction_encoding)  # (B, hidden_dim)
+            dir_feat = dir_feat.unsqueeze(-1).unsqueeze(-1)  # (B, hidden_dim, 1, 1)
+            dir_feat = dir_feat.expand(-1, -1, H, W)  # (B, hidden_dim, H, W)
+        else:
+            dir_feat = 0
+        
         # Initialize hidden state if not provided
         if hidden_state is None:
             hidden_state = self.init_h(context_feat)
         
         # Update hidden state with ConvGRU
-        hidden_state = self.gru(hidden_state, corr_proj + context_proj)
+        hidden_state = self.gru(hidden_state, corr_proj + context_proj + dir_feat)
         
         # Predict pose update
         pose_delta = self.pose_head(hidden_state)
