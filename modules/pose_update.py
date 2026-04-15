@@ -159,12 +159,16 @@ class PoseRegressionHead(nn.Module):
 class PoseUpdateNet(nn.Module):
     """
     Pose update network with ConvGRU for iterative refinement.
+
+    corr_dim is now the per-sample correlation dimension (C_corr), not N*C_corr.
+    The network processes one sample at a time; the caller handles multi-sample
+    selection via confidence scores.
     """
     def __init__(self, hidden_dim=128, corr_dim=256, context_dim=64, num_layers=3):
         """
         Args:
             hidden_dim: Dimension of ConvGRU hidden state
-            corr_dim: Dimension of correlation features
+            corr_dim: Dimension of per-sample correlation features (C_corr)
             context_dim: Dimension of context features from encoder
             num_layers: Number of residual blocks in pose regression head
         """

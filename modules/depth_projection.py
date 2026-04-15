@@ -208,6 +208,74 @@ class CorrBlock(nn.Module):
         out = out.permute(0, 1, 3, 4, 2).reshape(B, N * out.shape[2], H, W)
 
         return out.float()
+
+    def sample_per_pose(self, coords):
+        """
+        Sample correlation volume per pose sample and compute confidence scores.
+
+        Unlike __call__ which concatenates all samples into one tensor, this returns
+        individual features and confidence scores for each sample.
+
+        Args:
+            coords: Sampling coordinates of shape (B, N, 2, H, W)
+
+        Returns:
+            corr_feats: Per-sample correlation features of shape (B*N, C_corr, H, W)
+            confidence: Per-sample confidence scores of shape (B, N),
+                        computed as mean correlation response
+        """
+        r = self.radius
+        B, N, C_coord, H, W = coords.shape
+
+        corr0 = self.corr_pyramid[0]
+        B_q, C_q, H_feat, W_feat = corr0.shape
+
+        coords_flat = coords.permute(0, 1, 3, 4, 2).reshape(B * N, H, W, 2)
+
+        out_pyramid = []
+        # Also collect center correlation (confidence) from level 0
+        for i in range(self.num_levels):
+            corr = self.corr_pyramid[i]
+            h2_i, w2_i = corr.shape[-2], corr.shape[-1]
+            scale = 2 ** i
+
+            dx = torch.linspace(-r, r, 2 * r + 1, dtype=corr.dtype, device=coords.device)
+            dy = torch.linspace(-r, r, 2 * r + 1, dtype=corr.dtype, device=coords.device)
+            delta = torch.stack(torch.meshgrid(dy, dx, indexing="ij"), axis=-1)
+
+            centroid = coords_flat / scale
+            centroid = centroid.unsqueeze(3).unsqueeze(3)
+            delta = delta.view(1, 1, 1, 2 * r + 1, 2 * r + 1, 2)
+            sampling_coords = centroid + delta
+            sampling_coords = sampling_coords.reshape(B * N * H * W, 2 * r + 1, 2 * r + 1, 2)
+
+            corr_5d = corr.view(B, H_feat * W_feat, 1, h2_i, w2_i)
+
+            h_idx = torch.arange(H, device=coords.device).view(1, H, 1).expand(B * N, H, W)
+            w_idx = torch.arange(W, device=coords.device).view(1, 1, W).expand(B * N, H, W)
+            h_idx = torch.clamp(h_idx, 0, H_feat - 1)
+            w_idx = torch.clamp(w_idx, 0, W_feat - 1)
+            corr_idx = (h_idx * W_feat + w_idx).reshape(B * N * H * W)
+
+            b_idx = torch.arange(B, device=coords.device).view(B, 1).expand(B, N * H * W).reshape(B * N * H * W)
+            corr_sampled = corr_5d[b_idx, corr_idx]
+
+            corr_sampled = CorrBlock.bilinear_sampler(corr_sampled, sampling_coords)
+            corr_sampled = corr_sampled.squeeze(1)
+            corr_sampled = corr_sampled.view(B * N, H, W, -1)
+            out_pyramid.append(corr_sampled)
+
+        # Concatenate all pyramid levels
+        out = torch.cat(out_pyramid, dim=-1)  # (B*N, H, W, C_corr)
+        corr_feats = out.permute(0, 3, 1, 2).contiguous()  # (B*N, C_corr, H, W)
+
+        # Compute confidence: mean correlation response at level 0 (finest)
+        # out_pyramid[0] shape: (B*N, H, W, (2r+1)^2)
+        # The center of the local window (index r, r) is the correlation at the exact coordinate
+        center_val = out_pyramid[0][:, :, :, r * (2 * r + 1) + r]  # (B*N, H, W)
+        confidence = center_val.view(B, N, H, W).mean(dim=[2, 3])  # (B, N)
+
+        return corr_feats, confidence
     
     @staticmethod
     def corr(fmap1, fmap2):

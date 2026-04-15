@@ -113,11 +113,13 @@ class RAFTPose(nn.Module):
         )
         
         # Pose update network
-        # corr_dim is N * C_corr because sample_correlation_with_poses concatenates
-        # all N pose samples' correlation features along the channel dimension
+        # corr_dim is now per-sample C_corr (not N*C_corr), so the network
+        # is decoupled from num_pose_samples — training and inference can use
+        # different numbers of samples.
+        per_sample_corr_dim = (2 * corr_radius + 1) ** 2 * corr_levels
         self.pose_update_net = PoseUpdateNet(
             hidden_dim=hidden_dim,
-            corr_dim=num_pose_samples * (2 * corr_radius + 1) ** 2 * corr_levels,
+            corr_dim=per_sample_corr_dim,
             context_dim=context_dim,
             num_layers=3
         )
@@ -230,37 +232,45 @@ class RAFTPose(nn.Module):
         # Iterative pose refinement
         for it in range(self.num_iterations):
             # Generate pose samples around current estimate
-            # generate_pose_samples expects (q, t) tuple
             q_cur, t_cur = current_pose[:, :4], current_pose[:, 4:7]
             sampled_poses, _ = generate_pose_samples(
                 (q_cur, t_cur),
                 num_samples=self.num_pose_samples,
                 std_rot=self.pose_sample_std,
                 std_trans=self.pose_sample_std
-            )  # Returns [(q_i, t_i), ...]
+            )
             
             # Convert sampled poses to matrix format
             pose_samples = sampled_poses_to_matrices(sampled_poses)  # (B, N, 4, 4)
             
-            # Sample correlation volume using pose samples
-            corr_feat = self.sample_correlation_with_poses(
+            # Sample correlation volume — returns per-sample features + confidence
+            corr_feats, confidence = self.sample_correlation_with_poses(
                 pose_samples,
                 depth,
                 intrinsic_depth,
                 intrinsic_rgb
-            )  # (B, N*C_corr, H_feat, W_feat) — already at feature resolution
+            )  # corr_feats: (B*N, C_corr, H_feat, W_feat), confidence: (B, N)
 
-            # Ensure corr_feat matches context_feat spatial size
+            # Ensure spatial size matches context_feat
             feat_h, feat_w = context_feat.shape[2], context_feat.shape[3]
-            if corr_feat.shape[2:] != (feat_h, feat_w):
-                corr_feat = F.interpolate(
-                    corr_feat, size=(feat_h, feat_w),
+            if corr_feats.shape[2:] != (feat_h, feat_w):
+                corr_feats = F.interpolate(
+                    corr_feats, size=(feat_h, feat_w),
                     mode='bilinear', align_corners=False
                 )
 
-            # Predict pose delta and update hidden state
+            # Select best sample by confidence score
+            best_idx = confidence.argmax(dim=1)  # (B,)
+            B_size = corr_feats.shape[0] // confidence.shape[1]  # B
+            N_size = confidence.shape[1]
+
+            # Gather the best sample's correlation features: (B, C_corr, H, W)
+            best_corr = corr_feats.view(B_size, N_size, -1, feat_h, feat_w)
+            best_corr = best_corr[torch.arange(B_size, device=device), best_idx]  # (B, C_corr, H, W)
+
+            # Predict pose delta using only the best sample (ConvGRU runs once)
             pose_delta, hidden_state = self.pose_update_net(
-                corr_feat,
+                best_corr,
                 context_feat,
                 hidden_state
             )  # pose_delta: (B, 7, H, W)
@@ -269,11 +279,9 @@ class RAFTPose(nn.Module):
             pose_delta_avg = pose_delta.mean(dim=[2, 3])  # (B, 7)
             
             # Update pose estimate using se(3) Lie algebra
-            # apply_pose_update expects ((B,4), (B,3)) tuples, convert from (B,7)
             q_cur, t_cur = current_pose[:, :4], current_pose[:, 4:7]
             dq, dt = pose_delta_avg[:, :4], pose_delta_avg[:, 4:7]
             q_new, t_new = apply_pose_update((q_cur, t_cur), (dq, dt))
-            # Normalize quaternion (create new tensor to avoid inplace modification)
             q_new = F.normalize(q_new, dim=1)
             current_pose = torch.cat([q_new, t_new], dim=1)  # (B, 7)
             
@@ -298,9 +306,9 @@ class RAFTPose(nn.Module):
         Sample correlation volume using multiple pose transformations.
 
         Projects depth at FEATURE MAP resolution (H/8 × W/8) instead of
-        original image resolution to avoid OOM. The key insight: correlation
-        features live at feature map resolution, so projection coordinates
-        should also be at that resolution.
+        original image resolution to avoid OOM.
+
+        Returns per-sample correlation features and confidence scores.
 
         Args:
             pose_samples: Pose matrices of shape (B, N, 4, 4)
@@ -309,39 +317,35 @@ class RAFTPose(nn.Module):
             intrinsic_rgb: RGB camera intrinsic, shape (B, 3, 3)
 
         Returns:
-            corr_feat: Correlation features of shape (B, N*C_corr, H_feat, W_feat)
+            corr_feats: Per-sample correlation features (B*N, C_corr, H_feat, W_feat)
+            confidence: Per-sample confidence scores (B, N)
         """
         B, C, H, W = depth.shape
         device = depth.device
 
         if self.corr_block is None:
-            # Fallback: dummy correlation features
             corr_dim = (2 * self.corr_radius + 1) ** 2 * self.corr_levels
             N = pose_samples.shape[1]
-            # Use feature map resolution for output
             feat_h, feat_w = H // self.downsample_factor, W // self.downsample_factor
-            return torch.randn(B, N * corr_dim, feat_h, feat_w, device=device)
+            dummy_feats = torch.randn(B * N, corr_dim, feat_h, feat_w, device=device)
+            dummy_conf = torch.zeros(B, N, device=device)
+            return dummy_feats, dummy_conf
 
-        # Downsample depth to feature map resolution to avoid OOM
-        # Original: project at H×W (e.g. 480×640 = 307,200 pixels)
-        # Now: project at H/8×W/8 (e.g. 60×80 = 4,800 pixels) — 64x less memory
+        # Downsample depth to feature map resolution
         downsample = self.downsample_factor
         feat_h, feat_w = H // downsample, W // downsample
 
-        # Resize depth map to feature resolution using nearest-neighbor
-        # (preserve depth values, no interpolation artifacts)
         depth_small = F.interpolate(
             depth, size=(feat_h, feat_w), mode='nearest'
         ).squeeze(1)  # (B, feat_h, feat_w)
 
         # Scale intrinsics to match feature map resolution
-        # When image shrinks by factor `downsample`, intrinsics scale by 1/downsample
         scale = 1.0 / downsample
         intrinsic_depth_s = intrinsic_depth.clone()
-        intrinsic_depth_s[:, 0, 0] *= scale  # fx
-        intrinsic_depth_s[:, 1, 1] *= scale  # fy
-        intrinsic_depth_s[:, 0, 2] *= scale  # cx
-        intrinsic_depth_s[:, 1, 2] *= scale  # cy
+        intrinsic_depth_s[:, 0, 0] *= scale
+        intrinsic_depth_s[:, 1, 1] *= scale
+        intrinsic_depth_s[:, 0, 2] *= scale
+        intrinsic_depth_s[:, 1, 2] *= scale
 
         intrinsic_rgb_s = intrinsic_rgb.clone()
         intrinsic_rgb_s[:, 0, 0] *= scale
@@ -349,15 +353,15 @@ class RAFTPose(nn.Module):
         intrinsic_rgb_s[:, 0, 2] *= scale
         intrinsic_rgb_s[:, 1, 2] *= scale
 
-        # Batch depth projection at feature map resolution: (B, N, 2, feat_h, feat_w)
+        # Batch depth projection at feature map resolution
         projected_coords = self.depth_projector(
             depth_small, pose_samples, intrinsic_depth_s, intrinsic_rgb_s
-        )
+        )  # (B, N, 2, feat_h, feat_w)
 
-        # Sample correlation volume at projected coordinates
-        corr_feat = self.corr_block(projected_coords)  # (B, N*C_corr, feat_h, feat_w)
+        # Sample correlation volume per pose — returns (B*N, C_corr, H, W) + (B, N)
+        corr_feats, confidence = self.corr_block.sample_per_pose(projected_coords)
 
-        return corr_feat
+        return corr_feats, confidence
     
     def compute_loss(self, pred_pose, gt_pose, reduction='mean'):
         """
