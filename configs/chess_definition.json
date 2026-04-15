@@ -57,7 +57,7 @@
             "scene": "chess",
             "seq": "seq-01",
             "frame_range": [35, 39],
-            "split": "train"
+            "split": "val"
         },
         {
             "scene": "chess",
@@ -99,7 +99,7 @@
             "scene": "chess",
             "seq": "seq-02",
             "frame_range": [27, 39],
-            "split": "train"
+            "split": "val"
         },
         {
             "scene": "chess",
@@ -159,7 +159,7 @@
             "scene": "chess",
             "seq": "seq-03",
             "frame_range": [32, 36],
-            "split": "train"
+            "split": "val"
         },
         {
             "scene": "chess",
@@ -201,7 +201,7 @@
             "scene": "chess",
             "seq": "seq-04",
             "frame_range": [34, 39],
-            "split": "train"
+            "split": "val"
         },
         {
             "scene": "chess",
@@ -243,43 +243,43 @@
             "scene": "chess",
             "seq": "seq-05",
             "frame_range": [33, 37],
-            "split": "train"
+            "split": "val"
         },
         {
             "scene": "chess",
             "seq": "seq-06",
             "frame_range": [0, 7],
-            "split": "val"
+            "split": "train"
         },
         {
             "scene": "chess",
             "seq": "seq-06",
             "frame_range": [8, 13],
-            "split": "val"
+            "split": "train"
         },
         {
             "scene": "chess",
             "seq": "seq-06",
             "frame_range": [14, 19],
-            "split": "val"
+            "split": "train"
         },
         {
             "scene": "chess",
             "seq": "seq-06",
             "frame_range": [20, 24],
-            "split": "val"
+            "split": "train"
         },
         {
             "scene": "chess",
             "seq": "seq-06",
             "frame_range": [25, 29],
-            "split": "val"
+            "split": "train"
         },
         {
             "scene": "chess",
             "seq": "seq-06",
             "frame_range": [30, 33],
-            "split": "val"
+            "split": "train"
         },
         {
             "scene": "chess",

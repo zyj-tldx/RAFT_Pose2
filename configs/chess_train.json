@@ -1,5 +1,5 @@
 {
-  "dataset_root": "/media/pine/新加卷/CMRNext-new/models/RAFT_Pose2/7Scenes/data",
+  "dataset_root": "/root/autodl-tmp/RAFT_Pose2/7Scenes/data",
   "camera_intrinsics": {
     "fx": 585.0,
     "fy": 585.0,

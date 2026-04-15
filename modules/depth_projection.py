@@ -158,7 +158,7 @@ class CorrBlock(nn.Module):
             sampling_coords = centroid + delta
 
             # Reshape for grid_sample: (B*N*H*W, 2r+1, 2r+1, 2)
-            sampling_coords = sampling_coords.reshape(B * N * H * W, 2 * r + 1, 2 * r + 1, 2)
+            sampling_coords = sampling_coords.reshape(B * N * H * W, 2 * r + 1, 2 * r + 1, 2).contiguous()
 
             # corr: (B_q, 1, h2_i, w2_i) -> expand to (B*N*H*W, 1, h2_i, w2_i)
             # Each spatial position (h,w) in the output corresponds to query position (h,w)
@@ -205,7 +205,7 @@ class CorrBlock(nn.Module):
         out = torch.cat(out_pyramid, dim=-1)  # (B*N, H, W, C_corr)
         out = out.permute(0, 3, 1, 2).contiguous()  # (B*N, C_corr, H, W)
         out = out.view(B, N, -1, H, W)  # (B, N, C_corr, H, W)
-        out = out.permute(0, 1, 3, 4, 2).reshape(B, N * out.shape[2], H, W)
+        out = out.permute(0, 1, 3, 4, 2).contiguous().reshape(B, N * out.shape[2], H, W)
 
         return out.float()
 
@@ -267,7 +267,7 @@ class CorrBlock(nn.Module):
             centroid = centroid.unsqueeze(3).unsqueeze(3)
             delta = delta.view(1, 1, 1, 2 * r + 1, 2 * r + 1, 2)
             sampling_coords = centroid + delta
-            sampling_coords = sampling_coords.reshape(B * N * H * W, 2 * r + 1, 2 * r + 1, 2)
+            sampling_coords = sampling_coords.reshape(B * N * H * W, 2 * r + 1, 2 * r + 1, 2).contiguous()
 
             corr_5d = corr.view(B, H_feat * W_feat, 1, h2_i, w2_i)
 
@@ -278,7 +278,7 @@ class CorrBlock(nn.Module):
             corr_idx = (h_idx * W_feat + w_idx).reshape(B * N * H * W)
 
             b_idx = torch.arange(B, device=coords.device).view(B, 1).expand(B, N * H * W).reshape(B * N * H * W)
-            corr_sampled = corr_5d[b_idx, corr_idx]
+            corr_sampled = corr_5d[b_idx, corr_idx].contiguous()
 
             corr_sampled = CorrBlock.bilinear_sampler(corr_sampled, sampling_coords)
             corr_sampled = corr_sampled.squeeze(1)
@@ -347,8 +347,11 @@ class CorrBlock(nn.Module):
         x = torch.clamp(x, -1.0, 1.0)
         y = torch.clamp(y, -1.0, 1.0)
         
-        coords_norm = torch.stack([x, y], dim=-1)
-        sampled = F.grid_sample(img, coords_norm, mode=mode, align_corners=True)
+        coords_norm = torch.stack([x, y], dim=-1).contiguous()
+        # Use non-cuDNN path to avoid CUDNN_STATUS_NOT_SUPPORTED errors
+        # with certain input shape combinations (e.g. large batch, small spatial dims)
+        with torch.backends.cudnn.flags(enabled=False):
+            sampled = F.grid_sample(img.contiguous(), coords_norm, mode=mode, align_corners=True)
         
         return sampled
 
