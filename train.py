@@ -129,8 +129,9 @@ def build_model(args):
 # ─── Training Loop ────────────────────────────────────────────────────────────
 
 def train_one_epoch(model, dataloader, criterion, optimizer, device, epoch,
-                    grad_clip=1.0, log_interval=10):
-    """Train for one epoch."""
+                    grad_clip=1.0, log_interval=10, grad_accum_steps=1,
+                    seq_loss_gamma=0.8):
+    """Train for one epoch with sequence loss and gradient accumulation."""
     model.train()
 
     loss_meter = AverageMeter("Loss")
@@ -140,6 +141,7 @@ def train_one_epoch(model, dataloader, criterion, optimizer, device, epoch,
     batch_time_meter = AverageMeter("Batch")
 
     end = time.time()
+    optimizer.zero_grad()
 
     for i, batch in enumerate(dataloader):
         # Measure data loading time
@@ -161,27 +163,33 @@ def train_one_epoch(model, dataloader, criterion, optimizer, device, epoch,
             torch.zeros(B, 3, device=device),   # tx, ty, tz = 0
         ], dim=1)  # (B, 7)
 
-        # Forward
-        pred_pose = model(
+        # Forward — return all intermediate poses for sequence loss
+        _, pose_sequence = model(
             image=image,
             depth=depth,
             intrinsic_rgb=intrinsic_rgb,
             intrinsic_depth=intrinsic_depth,
             init_pose=init_pose,
+            return_all_poses=True,
         )
 
-        # Loss
-        loss, details = criterion(pred_pose, gt_pose)
+        # Sequence loss with exponential weighting
+        loss, details = criterion.forward_sequence(
+            pose_sequence, gt_pose, gamma=seq_loss_gamma
+        )
 
-        # Backward
-        optimizer.zero_grad()
+        # Scale loss for gradient accumulation
+        loss = loss / grad_accum_steps
+
+        # Backward (accumulate gradients)
         loss.backward()
 
-        # Gradient clipping
-        if grad_clip > 0:
-            total_norm = nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
-
-        optimizer.step()
+        # Optimizer step every grad_accum_steps
+        if (i + 1) % grad_accum_steps == 0 or (i + 1) == len(dataloader):
+            if grad_clip > 0:
+                nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
+            optimizer.step()
+            optimizer.zero_grad()
 
         # Update meters
         loss_meter.update(details["total_loss"], image.size(0))
@@ -278,6 +286,11 @@ def parse_args():
     parser.add_argument("--lr", type=float, default=1e-4)
     parser.add_argument("--weight_decay", type=float, default=1e-5)
     parser.add_argument("--grad_clip", type=float, default=1.0)
+    parser.add_argument("--grad_accum_steps", type=int, default=1,
+                        help="Gradient accumulation steps (effective batch = batch_size * grad_accum_steps)")
+    parser.add_argument("--seq_loss_gamma", type=float, default=0.8,
+                        help="Exponential weighting for sequence loss. "
+                             "Later iterations weighted more (1.0 = equal, 0.8 = last ~2.4x first for K=4)")
     parser.add_argument("--scheduler", type=str, default="cosine",
                         choices=["cosine", "step", "none"])
 
@@ -394,6 +407,8 @@ def main():
         train_metrics = train_one_epoch(
             model, train_loader, criterion, optimizer, device, epoch,
             grad_clip=args.grad_clip, log_interval=args.log_interval,
+            grad_accum_steps=args.grad_accum_steps,
+            seq_loss_gamma=args.seq_loss_gamma,
         )
 
         # Validate

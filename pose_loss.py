@@ -204,3 +204,64 @@ class PoseLoss(nn.Module):
             details['uncertainty_loss'] = uncertainty_loss.item()
 
         return total_loss, details
+
+    def forward_sequence(self, pose_sequence, gt_pose, gamma=0.8):
+        """
+        Compute sequence loss over all iterative refinement steps.
+
+        Each iteration's predicted pose is supervised against the GT pose,
+        with exponentially increasing weights for later iterations (RAFT-style).
+
+        Args:
+            pose_sequence: Predicted poses (B, K+1, 7) — initial pose + K iteration outputs.
+                           pose_sequence[:, 0] is the initial (identity) pose, skipped.
+            gt_pose: Ground truth pose (B, 7) — [w, x, y, z, tx, ty, tz]
+            gamma: Exponential weighting factor in (0, 1].
+                   Later iterations receive higher weight: w_i = gamma^(K-1-i).
+                   gamma=1.0 means all iterations weighted equally.
+                   gamma=0.8 means the last iteration is weighted ~2.4x more than the first (for K=4).
+
+        Returns:
+            total_loss: Weighted sum of per-iteration losses (scalar)
+            details: Dict with average loss components for logging
+        """
+        K = pose_sequence.shape[1] - 1  # Number of refinement iterations
+        iter_poses = pose_sequence[:, 1:]  # (B, K, 7) — skip initial identity pose
+
+        gt_quat = gt_pose[:, :4]
+        gt_trans = gt_pose[:, 4:7]
+
+        total_loss = torch.tensor(0.0, device=gt_pose.device)
+        total_rot_loss = 0.0
+        total_trans_loss = 0.0
+        weight_sum = 0.0
+
+        for i in range(K):
+            # Exponential weighting: later iterations matter more
+            weight = gamma ** (K - 1 - i)
+
+            pred_i = iter_poses[:, i]  # (B, 7)
+            pred_quat = pred_i[:, :4]
+            pred_trans = pred_i[:, 4:7]
+
+            rot_loss = self.rot_loss_fn(pred_quat, gt_quat)
+            trans_loss = self.trans_loss_fn(pred_trans, gt_trans)
+            iter_loss = self.rot_weight * rot_loss + self.trans_weight * trans_loss
+
+            total_loss = total_loss + weight * iter_loss
+            total_rot_loss += weight * rot_loss.item()
+            total_trans_loss += weight * trans_loss.item()
+            weight_sum += weight
+
+        # Normalize by total weight
+        total_rot_loss /= weight_sum
+        total_trans_loss /= weight_sum
+
+        details = {
+            'total_loss': total_loss.item() / weight_sum,
+            'rot_loss': total_rot_loss,
+            'rot_loss_deg': total_rot_loss * (180.0 / 3.14159265358979),
+            'trans_loss': total_trans_loss,
+        }
+
+        return total_loss / weight_sum, details
