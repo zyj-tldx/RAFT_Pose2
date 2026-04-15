@@ -322,6 +322,7 @@ def main():
         batch_size=args.batch_size,
         num_workers=args.num_workers,
         image_size=tuple(args.image_size) if args.image_size else None,
+        augment=False,
     )
     val_loader = get_dataloader(
         args.config, split="val",
