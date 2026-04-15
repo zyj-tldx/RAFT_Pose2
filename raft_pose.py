@@ -517,7 +517,7 @@ class RAFTPose(nn.Module):
             # Update step for next iteration
             current_step = self.pose_sample_std * mean_step_scale
             # Update baseline (exponential moving average)
-            baseline_confidence = 0.7 * baseline_confidence + 0.3 * best_confidence
+            baseline_confidence = (0.7 * baseline_confidence + 0.3 * best_confidence).detach()
 
             # Gather correlation features and aggregate top-K by confidence
             feat_h, feat_w = context_feat.shape[2], context_feat.shape[3]
