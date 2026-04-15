@@ -152,12 +152,22 @@ def train_one_epoch(model, dataloader, criterion, optimizer, device, epoch,
         intrinsic_depth = batch["intrinsic_depth"].to(device)
         gt_pose = batch["gt_pose"].to(device)
 
+        # Initial pose: identity (assumes image and depth are aligned)
+        # The model's job is to refine from this starting point toward GT relative pose
+        B = image.size(0)
+        init_pose = torch.cat([
+            torch.ones(B, 1, device=device),   # qw = 1
+            torch.zeros(B, 3, device=device),   # qx, qy, qz = 0
+            torch.zeros(B, 3, device=device),   # tx, ty, tz = 0
+        ], dim=1)  # (B, 7)
+
         # Forward
         pred_pose = model(
             image=image,
             depth=depth,
             intrinsic_rgb=intrinsic_rgb,
             intrinsic_depth=intrinsic_depth,
+            init_pose=init_pose,
         )
 
         # Loss
@@ -274,7 +284,7 @@ def parse_args():
     # Loss weights
     parser.add_argument("--rot_weight", type=float, default=1.0,
                         help="Weight for rotation loss")
-    parser.add_argument("--trans_weight", type=float, default=100.0,
+    parser.add_argument("--trans_weight", type=float, default=10.0,
                         help="Weight for translation loss")
 
     # Checkpointing

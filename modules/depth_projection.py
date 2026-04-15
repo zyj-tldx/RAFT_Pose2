@@ -216,13 +216,16 @@ class CorrBlock(nn.Module):
         Unlike __call__ which concatenates all samples into one tensor, this returns
         individual features and confidence scores for each sample.
 
+        Out-of-bounds projected coordinates are masked to zero (ignored) instead of
+        being clamped to boundary values, avoiding noisy features from invalid regions.
+
         Args:
             coords: Sampling coordinates of shape (B, N, 2, H, W)
 
         Returns:
             corr_feats: Per-sample correlation features of shape (B*N, C_corr, H, W)
             confidence: Per-sample confidence scores of shape (B, N),
-                        computed as mean correlation response
+                        computed as mean correlation response over valid pixels only
         """
         r = self.radius
         B, N, C_coord, H, W = coords.shape
@@ -232,12 +235,29 @@ class CorrBlock(nn.Module):
 
         coords_flat = coords.permute(0, 1, 3, 4, 2).reshape(B * N, H, W, 2)
 
+        # Validity mask: True where projected coords are within feature map bounds
+        # coords_flat: (B*N, H, W, 2) -> u is [...,0], v is [...,1]
+        valid_mask = (
+            (coords_flat[..., 0] >= 0) & (coords_flat[..., 0] <= W_feat - 1) &
+            (coords_flat[..., 1] >= 0) & (coords_flat[..., 1] <= H_feat - 1)
+        )  # (B*N, H, W)
+
         out_pyramid = []
         # Also collect center correlation (confidence) from level 0
         for i in range(self.num_levels):
             corr = self.corr_pyramid[i]
             h2_i, w2_i = corr.shape[-2], corr.shape[-1]
             scale = 2 ** i
+
+            # Skip pyramid levels that are too small for the sampling window
+            # grid_sample on very small feature maps (e.g. 1x2) with align_corners
+            # produces NaN in gradients. Minimum size: 2*r+1 in each dimension.
+            min_size = 2 * r + 1
+            if h2_i < min_size or w2_i < min_size:
+                # Fill with zeros for this level
+                out_pyramid.append(torch.zeros(B * N, H, W, (2 * r + 1) ** 2,
+                                                dtype=corr.dtype, device=coords.device))
+                continue
 
             dx = torch.linspace(-r, r, 2 * r + 1, dtype=corr.dtype, device=coords.device)
             dy = torch.linspace(-r, r, 2 * r + 1, dtype=corr.dtype, device=coords.device)
@@ -269,14 +289,21 @@ class CorrBlock(nn.Module):
         out = torch.cat(out_pyramid, dim=-1)  # (B*N, H, W, C_corr)
         corr_feats = out.permute(0, 3, 1, 2).contiguous()  # (B*N, C_corr, H, W)
 
+        # Zero out invalid (out-of-bounds) pixels
+        # valid_mask: (B*N, H, W) -> (B*N, 1, H, W) broadcast over C_corr
+        corr_feats = corr_feats * valid_mask.unsqueeze(1).float()
+
         # Compute confidence: mean correlation response at level 0 (finest)
-        # out_pyramid[0] shape: (B*N, H, W, (2r+1)^2)
-        # The center of the local window (index r, r) is the correlation at the exact coordinate
+        # Only over valid pixels to avoid bias from out-of-bounds regions
         center_val = out_pyramid[0][:, :, :, r * (2 * r + 1) + r]  # (B*N, H, W)
-        confidence = center_val.view(B, N, H, W).mean(dim=[2, 3])  # (B, N)
+        center_val = center_val * valid_mask.float()  # mask invalid pixels
+
+        valid_count = valid_mask.sum(dim=[1, 2]).float().clamp(min=1.0)  # (B*N,)
+        confidence = center_val.sum(dim=[1, 2]) / valid_count  # (B*N,)
+        confidence = confidence.view(B, N)  # (B, N)
 
         return corr_feats, confidence
-    
+
     @staticmethod
     def corr(fmap1, fmap2):
         """
@@ -314,6 +341,11 @@ class CorrBlock(nn.Module):
         # Normalize coordinates to [-1, 1]
         x = coords[..., 0] / (W - 1) * 2 - 1
         y = coords[..., 1] / (H - 1) * 2 - 1
+        
+        # Clamp to prevent NaN from grid_sample with align_corners=True
+        # (out-of-bounds coords produce NaN in some PyTorch versions)
+        x = torch.clamp(x, -1.0, 1.0)
+        y = torch.clamp(y, -1.0, 1.0)
         
         coords_norm = torch.stack([x, y], dim=-1)
         sampled = F.grid_sample(img, coords_norm, mode=mode, align_corners=True)
