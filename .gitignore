@@ -35,6 +35,6 @@ Thumbs.db
 # === Logs ===
 runs/
 *.log
-
+result.*
 # === Misc ===
 *.bak

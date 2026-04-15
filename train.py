@@ -72,9 +72,33 @@ def save_checkpoint(state, is_best, checkpoint_dir, filename="checkpoint.pth"):
 
 
 def load_checkpoint(filepath, model, optimizer=None, scheduler=None):
-    """Load training checkpoint."""
+    """Load training checkpoint with backward compatibility."""
     checkpoint = torch.load(filepath, map_location="cpu")
-    model.load_state_dict(checkpoint["model_state_dict"])
+
+    # Handle backward compatibility: old checkpoints stored corr_proj with
+    # corr_dim = N * C_corr (concatenated samples), but new model uses
+    # corr_dim = C_corr (per-sample). The only affected layer is
+    # pose_update_net.corr_proj.0 (Conv2d).
+    model_state = checkpoint["model_state_dict"]
+    new_state = model.state_dict()
+
+    mismatch_keys = []
+    for k in model_state:
+        if k in new_state and model_state[k].shape != new_state[k].shape:
+            mismatch_keys.append((k, model_state[k].shape, new_state[k].shape))
+
+    if mismatch_keys:
+        print(f"  [Compatibility] Skipping {len(mismatch_keys)} mismatched layers:")
+        for k, old_shape, new_shape in mismatch_keys:
+            print(f"    {k}: checkpoint {old_shape} -> model {new_shape}")
+        # Only load matching layers
+        model_state = {k: v for k, v in model_state.items()
+                       if k not in new_state or model_state[k].shape == new_state[k].shape}
+        missing, unexpected = model.load_state_dict(model_state, strict=False)
+        if missing:
+            print(f"  [Compatibility] Uninitialized layers: {missing}")
+    else:
+        model.load_state_dict(model_state)
 
     if optimizer is not None and "optimizer_state_dict" in checkpoint:
         optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
