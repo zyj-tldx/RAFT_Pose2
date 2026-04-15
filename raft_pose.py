@@ -179,61 +179,6 @@ class RAFTPose(nn.Module):
         
         return init_pose
 
-    def evaluate_alignment(self, depth, intrinsic_depth, intrinsic_rgb):
-        """
-        Evaluate initial alignment by projecting depth with identity pose
-        and computing correlation response. This gives a baseline "alignment score"
-        that indicates how well the depth and image are currently aligned.
-
-        Args:
-            depth: Depth map of shape (B, 1, H, W)
-            intrinsic_depth: Depth camera intrinsic, shape (B, 3, 3)
-            intrinsic_rgb: RGB camera intrinsic, shape (B, 3, 3)
-
-        Returns:
-            alignment_score: Per-sample score of shape (B,), mean correlation response
-                             at identity pose projection
-        """
-        B = depth.shape[0]
-        device = depth.device
-
-        if self.corr_block is None:
-            return torch.zeros(B, device=device)
-
-        # Identity pose matrix
-        identity = torch.eye(4, device=device).unsqueeze(0).unsqueeze(0).expand(B, 1, 4, 4)
-
-        # Project depth at feature map resolution with identity pose
-        downsample = self.downsample_factor
-        H, W = depth.shape[2], depth.shape[3]
-        feat_h, feat_w = H // downsample, W // downsample
-
-        depth_small = F.interpolate(
-            depth, size=(feat_h, feat_w), mode='nearest'
-        ).squeeze(1)  # (B, feat_h, feat_w)
-
-        scale = 1.0 / downsample
-        intrinsic_depth_s = intrinsic_depth.clone()
-        intrinsic_depth_s[:, 0, 0] *= scale
-        intrinsic_depth_s[:, 1, 1] *= scale
-        intrinsic_depth_s[:, 0, 2] *= scale
-        intrinsic_depth_s[:, 1, 2] *= scale
-
-        intrinsic_rgb_s = intrinsic_rgb.clone()
-        intrinsic_rgb_s[:, 0, 0] *= scale
-        intrinsic_rgb_s[:, 1, 1] *= scale
-        intrinsic_rgb_s[:, 0, 2] *= scale
-        intrinsic_rgb_s[:, 1, 2] *= scale
-
-        projected_coords = self.depth_projector(
-            depth_small, identity, intrinsic_depth_s, intrinsic_rgb_s
-        )  # (B, 1, 2, feat_h, feat_w)
-
-        # Sample correlation at identity pose
-        _, confidence = self.corr_block.sample_per_pose(projected_coords)
-        # confidence: (B, 1) -> (B,)
-        return confidence.squeeze(1)
-
     def generate_directional_samples(self, current_pose, depth, intrinsic_depth,
                                      intrinsic_rgb, base_step_rot=0.02,
                                      base_step_trans=0.02):
@@ -479,45 +424,26 @@ class RAFTPose(nn.Module):
         if return_all_poses:
             pose_sequence = [current_pose.clone()]
         
-        # Evaluate initial alignment score as baseline for adaptive step sizing
-        # Higher baseline = already well aligned = use smaller steps
-        baseline_confidence = self.evaluate_alignment(depth, intrinsic_depth, intrinsic_rgb)  # (B,)
-        # Clamp to avoid division by zero or extreme scaling
-        baseline_confidence = baseline_confidence.clamp(min=0.01)
-        
-        # Current adaptive step size (starts at base, shrinks as alignment improves)
-        current_step = self.pose_sample_std
+        # Fixed step size: let the model learn step sizing via ConvGRU + sequence loss
+        # ConvGRU hidden state implicitly encodes iteration-awareness, and the
+        # regression head directly predicts pose deltas whose magnitude the
+        # network learns to control. No heuristic step adjustment needed.
+        fixed_step = self.pose_sample_std
         
         # Iterative pose refinement
         for it in range(self.num_iterations):
-            # Generate directional pose samples (fixed directions based on num_pose_samples)
-            # and evaluate correlation confidence for each
+            # Generate directional pose samples with FIXED step size
             pose_samples, confidence, corr_feats, dir_vecs = self.generate_directional_samples(
                 current_pose, depth, intrinsic_depth, intrinsic_rgb,
-                base_step_rot=current_step,
-                base_step_trans=current_step
+                base_step_rot=fixed_step,
+                base_step_trans=fixed_step
             )  # pose_samples: (B, N, 4, 4), confidence: (B, N)
             # corr_feats: (B*N, C_corr, H_feat, W_feat)
             # dir_vecs: (B, N, 6) — direction encoding per sample
-            # All N samples are projected and evaluated in parallel (batched)
 
             # Select best sample by confidence score
             best_idx = confidence.argmax(dim=1)  # (B,)
-            best_confidence = confidence[torch.arange(batch_size, device=device), best_idx]  # (B,)
             N_size = pose_samples.shape[1]
-
-            # Adaptive step size based on correlation improvement:
-            # - If best confidence >> baseline: well aligned, shrink step for fine tuning
-            # - If best confidence ~ baseline: still searching, keep step large
-            # ratio = best / baseline, scale step by 1 / (1 + ratio)
-            conf_ratio = best_confidence / baseline_confidence  # (B,)
-            step_scale = 1.0 / (1.0 + conf_ratio.abs())  # (B,)
-            mean_step_scale = step_scale.mean().item()
-            mean_step_scale = max(0.1, min(1.0, mean_step_scale))
-            # Update step for next iteration
-            current_step = self.pose_sample_std * mean_step_scale
-            # Update baseline (exponential moving average)
-            baseline_confidence = (0.7 * baseline_confidence + 0.3 * best_confidence).detach()
 
             # Gather correlation features and aggregate top-K by confidence
             feat_h, feat_w = context_feat.shape[2], context_feat.shape[3]
