@@ -1,6 +1,6 @@
 # === Data (too large for git) ===
 7Scenes/
-
+7Scenes.tar.xz
 # === Model checkpoints ===
 checkpoints/
 *.pth
