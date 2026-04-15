@@ -37,6 +37,31 @@ from dataloader import get_dataloader
 
 # ─── Utilities ────────────────────────────────────────────────────────────────
 
+def get_next_run_dir(base_dir="checkpoints", prefix="runs"):
+    """
+    Determine the next available run directory under base_dir.
+    
+    Scans existing `{prefix}_*` folders and increments the counter.
+    Returns (run_dir_path, run_number).
+    """
+    base = Path(base_dir)
+    base.mkdir(parents=True, exist_ok=True)
+    
+    existing = [d.name for d in base.iterdir() if d.is_dir() and d.name.startswith(prefix + "_")]
+    max_n = 0
+    for name in existing:
+        try:
+            n = int(name.split("_")[-1])
+            max_n = max(max_n, n)
+        except ValueError:
+            continue
+    
+    next_n = max_n + 1
+    run_dir = base / f"{prefix}_{next_n:03d}"
+    run_dir.mkdir(parents=True, exist_ok=True)
+    return str(run_dir), next_n
+
+
 class AverageMeter:
     """Track running average of a metric."""
 
@@ -329,6 +354,24 @@ def main():
     print(f"Device: {device}")
     print(f"Config: {args.config}")
 
+    # ─── Run directory ────────────────────────────────────────────────────
+    run_dir, run_n = get_next_run_dir(args.checkpoint_dir, prefix="runs")
+    log_path = Path(run_dir) / "train_log.txt"
+    print(f"Run directory: {run_dir}")
+
+    def log_print(msg, also_stdout=True):
+        """Print to both console and log file."""
+        line = msg + "\n"
+        if also_stdout:
+            print(msg, flush=True)
+        with open(log_path, "a") as f:
+            f.write(line)
+
+    log_print(f"Device: {device}")
+    log_print(f"Config: {args.config}")
+    log_print(f"Run directory: {run_dir}")
+    log_print(f"Arguments: {json.dumps(vars(args), indent=2)}")
+
     # ─── Data ─────────────────────────────────────────────────────────────
     train_loader = get_dataloader(
         args.config, split="train",
@@ -389,20 +432,16 @@ def main():
     # ─── TensorBoard ─────────────────────────────────────────────────────
     writer = None
     if args.tensorboard:
-        config_name = Path(args.config).stem
-        run_name = f"{config_name}_lr{args.lr}_bs{args.batch_size}"
-        tb_log_dir = Path(args.tb_dir) / run_name
+        tb_log_dir = Path(run_dir) / "tensorboard"
         writer = SummaryWriter(log_dir=str(tb_log_dir))
-        print(f"TensorBoard logging to: {tb_log_dir}")
+        log_print(f"TensorBoard logging to: {tb_log_dir}")
 
     # ─── Training Loop ────────────────────────────────────────────────────
-    print(f"\n{'='*60}")
-    print(f"Training: {args.epochs} epochs, batch_size={args.batch_size}, lr={args.lr}")
-    print(f"{'='*60}\n")
+    log_print(f"\n{'='*60}")
+    log_print(f"Training: {args.epochs} epochs, batch_size={args.batch_size}, lr={args.lr}")
+    log_print(f"{'='*60}\n")
 
     for epoch in range(start_epoch, args.epochs + 1):
-        print(f"Epoch {epoch}/{args.epochs}  (lr={optimizer.param_groups[0]['lr']:.2e})")
-
         # Train
         train_metrics = train_one_epoch(
             model, train_loader, criterion, optimizer, device, epoch,
@@ -419,12 +458,15 @@ def main():
             scheduler.step()
 
         # Logging
-        print(
+        log_print(
+            f"Epoch [{epoch}/{args.epochs}] (lr={optimizer.param_groups[0]['lr']:.2e})"
+        )
+        log_print(
             f"  Train → Loss: {train_metrics['train_loss']:.4f}  "
             f"Rot: {train_metrics['train_rot_deg']:.2f}°  "
             f"Trans: {train_metrics['train_trans_m']:.4f}m"
         )
-        print(
+        log_print(
             f"  Val   → Loss: {val_metrics['val_loss']:.4f}  "
             f"Rot: {val_metrics['val_rot_deg']:.2f}°  "
             f"Trans: {val_metrics['val_trans_m']:.4f}m"
@@ -454,17 +496,17 @@ def main():
                 "args": vars(args),
             },
             is_best=is_best,
-            checkpoint_dir=args.checkpoint_dir,
+            checkpoint_dir=run_dir,
         )
 
-        print()
+        log_print("")
 
     # ─── Cleanup ──────────────────────────────────────────────────────────
     if writer is not None:
         writer.close()
 
-    print(f"Training complete. Best val_loss: {best_val_loss:.6f}")
-    print(f"Checkpoints saved to: {args.checkpoint_dir}")
+    log_print(f"Training complete. Best val_loss: {best_val_loss:.6f}")
+    log_print(f"Checkpoints saved to: {run_dir}")
 
 
 if __name__ == "__main__":

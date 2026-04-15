@@ -45,6 +45,33 @@ from raft_pose import RAFTPose
 from pose_loss import PoseLoss
 
 
+# ─── Utilities ────────────────────────────────────────────────────────────────
+
+def get_next_test_dir(base_dir="checkpoints", prefix="test"):
+    """
+    Determine the next available test directory under base_dir.
+    
+    Scans existing `{prefix}_*` folders and increments the counter.
+    Returns (test_dir_path, test_number).
+    """
+    base = Path(base_dir)
+    base.mkdir(parents=True, exist_ok=True)
+    
+    existing = [d.name for d in base.iterdir() if d.is_dir() and d.name.startswith(prefix + "_")]
+    max_n = 0
+    for name in existing:
+        try:
+            n = int(name.split("_")[-1])
+            max_n = max(max_n, n)
+        except ValueError:
+            continue
+    
+    next_n = max_n + 1
+    test_dir = base / f"{prefix}_{next_n:03d}"
+    test_dir.mkdir(parents=True, exist_ok=True)
+    return str(test_dir), next_n
+
+
 # ─── I/O ──────────────────────────────────────────────────────────────────────
 
 def load_image(path, image_size=None):
@@ -350,8 +377,10 @@ def parse_args():
     parser.add_argument("--image_size", type=int, nargs=2, default=None,
                         metavar=("H", "W"),
                         help="Resize image/depth to (H, W). Default: use original size")
-    parser.add_argument("--output_prefix", type=str, default="result",
-                        help="Output prefix for all result files (result.png, result.pred.pcd, result.gt.pcd, result.json)")
+    parser.add_argument("--output_prefix", type=str, default=None,
+                        help="Output prefix for all result files. Default: auto-generate under checkpoints/test_n/")
+    parser.add_argument("--checkpoint_dir", type=str, default="checkpoints",
+                        help="Base directory for test outputs (default: checkpoints)")
     parser.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu")
 
     return parser.parse_args()
@@ -361,8 +390,28 @@ def main():
     args = parse_args()
     device = torch.device(args.device)
 
+    # ─── Test directory ───────────────────────────────────────────────────
+    test_dir, test_n = get_next_test_dir(args.checkpoint_dir, prefix="test")
+    log_path = Path(test_dir) / "test_log.txt"
+    print(f"Test directory: {test_dir}")
+
+    def log_print(msg, also_stdout=True):
+        """Print to both console and log file."""
+        line = msg + "\n"
+        if also_stdout:
+            print(msg, flush=True)
+        with open(log_path, "a") as f:
+            f.write(line)
+
+    # Auto-generate output_prefix if not specified
+    if args.output_prefix is None:
+        args.output_prefix = str(Path(test_dir) / "result")
+
+    log_print(f"Test directory: {test_dir}")
+    log_print(f"Arguments: {json.dumps(vars(args), indent=2)}")
+
     # ─── Load data ────────────────────────────────────────────────────────
-    print(f"Loading data...")
+    log_print(f"Loading data...")
     image_size = tuple(args.image_size) if args.image_size else None
 
     image = load_image(args.image, image_size)       # (3, H, W)
@@ -371,10 +420,10 @@ def main():
     T_depth_gt = load_pose(args.pose_depth)          # (4, 4) world pose of depth frame
 
     H, W = image.shape[1], image.shape[2]
-    print(f"  Image:      {args.image} -> {image.shape}")
-    print(f"  Depth:      {args.depth} -> {depth.shape}")
-    print(f"  Pose image: {args.pose_image}")
-    print(f"  Pose depth: {args.pose_depth}")
+    log_print(f"  Image:      {args.image} -> {image.shape}")
+    log_print(f"  Depth:      {args.depth} -> {depth.shape}")
+    log_print(f"  Pose image: {args.pose_image}")
+    log_print(f"  Pose depth: {args.pose_depth}")
 
     # Intrinsics
     fx, fy, cx, cy = args.intrinsics
@@ -389,10 +438,10 @@ def main():
     gt_rel_pose_7d = pose_matrix_to_7d(T_rel_gt.numpy())
     gt_rel_pose_tensor = torch.from_numpy(gt_rel_pose_7d).unsqueeze(0)  # (1, 7)
 
-    print(f"  GT relative pose: [{', '.join(f'{v:.6f}' for v in gt_rel_pose_7d)}]")
+    log_print(f"  GT relative pose: [{', '.join(f'{v:.6f}' for v in gt_rel_pose_7d)}]")
 
     # ─── Load model ──────────────────────────────────────────────────────
-    print(f"\nLoading checkpoint: {args.checkpoint}")
+    log_print(f"\nLoading checkpoint: {args.checkpoint}")
     checkpoint = torch.load(args.checkpoint, map_location="cpu")
 
     # Restore model args from checkpoint
@@ -414,11 +463,11 @@ def main():
     model.eval()
 
     n_params = sum(p.numel() for p in model.parameters())
-    print(f"  Model parameters: {n_params:,}")
-    print(f"  Checkpoint epoch: {checkpoint.get('epoch', 'N/A')}")
+    log_print(f"  Model parameters: {n_params:,}")
+    log_print(f"  Checkpoint epoch: {checkpoint.get('epoch', 'N/A')}")
 
     # ─── Inference ────────────────────────────────────────────────────────
-    print(f"\nRunning inference on {device}...")
+    log_print(f"\nRunning inference on {device}...")
 
     # Add batch dimension
     image_b = image.unsqueeze(0).to(device)       # (1, 3, H, W)
@@ -468,30 +517,30 @@ def main():
     )
 
     # ─── Print results ────────────────────────────────────────────────────
-    print(f"\n{'='*60}")
-    print(f"Validation Results")
-    print(f"{'='*60}")
-    print(f"  Loss:              {loss_details['total_loss']:.6f}")
-    print(f"    Rotation loss:   {loss_details['rot_loss_deg']:.4f}°")
-    print(f"    Translation loss:{loss_details['trans_loss']:.6f} m")
-    print(f"  --- Relative pose (T_rel) ---")
-    print(f"    Rotation error:  {rel_metrics['rotation_error_deg']:.4f}°")
-    print(f"    Translation error:{rel_metrics['translation_error_m']:.6f} m")
-    print(f"  --- World pose (T_image @ T_rel vs T_depth_gt) ---")
-    print(f"    Rotation error:  {world_metrics['rotation_error_deg']:.4f}°")
-    print(f"    Translation error:{world_metrics['translation_error_m']:.6f} m")
-    print(f"  Predicted T_rel:   [{', '.join(f'{v:.6f}' for v in pred_rel_pose_7d)}]")
-    print(f"  GT T_rel:          [{', '.join(f'{v:.6f}' for v in gt_rel_pose_7d)}]")
+    log_print(f"\n{'='*60}")
+    log_print(f"Validation Results")
+    log_print(f"{'='*60}")
+    log_print(f"  Loss:              {loss_details['total_loss']:.6f}")
+    log_print(f"    Rotation loss:   {loss_details['rot_loss_deg']:.4f}°")
+    log_print(f"    Translation loss:{loss_details['trans_loss']:.6f} m")
+    log_print(f"  --- Relative pose (T_rel) ---")
+    log_print(f"    Rotation error:  {rel_metrics['rotation_error_deg']:.4f}°")
+    log_print(f"    Translation error:{rel_metrics['translation_error_m']:.6f} m")
+    log_print(f"  --- World pose (T_image @ T_rel vs T_depth_gt) ---")
+    log_print(f"    Rotation error:  {world_metrics['rotation_error_deg']:.4f}°")
+    log_print(f"    Translation error:{world_metrics['translation_error_m']:.6f} m")
+    log_print(f"  Predicted T_rel:   [{', '.join(f'{v:.6f}' for v in pred_rel_pose_7d)}]")
+    log_print(f"  GT T_rel:          [{', '.join(f'{v:.6f}' for v in gt_rel_pose_7d)}]")
 
     # Iteration convergence (relative pose)
-    print(f"\n  Iteration convergence (relative pose):")
+    log_print(f"\n  Iteration convergence (relative pose):")
     for i, p in enumerate(pose_seq_np):
         m = compute_metrics(p, gt_rel_pose_7d)
-        print(f"    Iter {i:2d}: rot={m['rotation_error_deg']:8.4f}°  "
+        log_print(f"    Iter {i:2d}: rot={m['rotation_error_deg']:8.4f}°  "
               f"trans={m['translation_error_m']:.6f}m")
 
     # ─── Visualization ────────────────────────────────────────────────────
-    print(f"\nGenerating visualization...")
+    log_print(f"\nGenerating visualization...")
 
     image_np = (image.permute(1, 2, 0).numpy() * 255).astype(np.uint8)  # (H, W, 3)
     depth_np = depth.squeeze(0).numpy()  # (H, W)
@@ -524,11 +573,11 @@ def main():
     output_json = output_prefix.with_suffix(".json")
 
     comp_img.save(str(output_png))
-    print(f"  Saved to: {output_png}")
+    log_print(f"  Saved to: {output_png}")
 
     # ─── Save PCD ─────────────────────────────────────────────────────────
     # Use relative pose: depth → image cam, then project to image for colors
-    print(f"\nSaving PCD files...")
+    log_print(f"\nSaving PCD files...")
     save_colored_pcd(
         depth_np, image_np, intrinsic_np, pred_rel_pose_7d,
         str(output_pred_pcd),
@@ -546,6 +595,7 @@ def main():
         "depth": args.depth,
         "pose_image": args.pose_image,
         "pose_depth": args.pose_depth,
+        "test_directory": test_dir,
         "loss": loss_details,
         "relative_pose_metrics": rel_metrics,
         "world_pose_metrics": world_metrics,
@@ -564,9 +614,9 @@ def main():
     }
     with open(metrics_path, "w") as f:
         json.dump(metrics_output, f, indent=2)
-    print(f"  Metrics saved to: {metrics_path}")
+    log_print(f"  Metrics saved to: {metrics_path}")
 
-    print(f"\nDone!")
+    log_print(f"\nDone! All outputs saved to: {test_dir}")
 
 
 if __name__ == "__main__":
