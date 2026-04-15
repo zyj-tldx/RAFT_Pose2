@@ -175,6 +175,17 @@ python train.py \
 tensorboard --logdir runs
 ```
 
+### 验证
+
+```bash
+python validate.py \
+    --checkpoint checkpoints/model_best.pth \
+    --image 7Scenes/data/chess/seq-01/color_000.png \
+    --depth 7Scenes/data/chess/seq-01/depth_000.png \
+    --pose  7Scenes/data/chess/seq-01/pose_000.txt \
+    --intrinsics 585 585 320 240 \
+    --output result.png
+
 ## 🔧 模型参数
 
 | 参数 | 类型 | 默认值 | 说明 |
