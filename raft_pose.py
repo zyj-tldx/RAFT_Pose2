@@ -551,26 +551,25 @@ class RAFTPose(nn.Module):
             rot_vec = pose_delta_avg[:, :3]  # (B, 3)
             dt = pose_delta_avg[:, 3:6]      # (B, 3)
             
-            # Clamp rotation angle to avoid instability (max ~30° per iteration)
-            angle = rot_vec.norm(dim=1, keepdim=True)  # (B, 1)
-            angle_clamped = angle.clamp(max=0.5)  # (B, 1)
-            rot_vec = rot_vec / angle.clamp(min=1e-8) * angle_clamped  # (B, 3)
+            # Rodrigues' formula: rotation vector → quaternion (fully differentiable)
+            # dq = [cos(θ/2), sin(θ/2)/θ * r]
+            # When θ→0: sinc(θ/2) = sin(θ/2)/(θ/2) → 1, so dq → [1, r/2]
+            #
+            # IMPORTANT: Do NOT pre-normalize rot_vec (rot_vec / angle * angle_clamped)
+            # because that creates 0/0 when rot_vec=0, killing the gradient entirely.
+            # Instead, keep raw rot_vec and let sinc handle the small-angle limit.
+            # For large angles, clamp via element-wise scaling to preserve gradient.
+            angle = rot_vec.norm(dim=1, keepdim=True).clamp(min=1e-8)  # (B, 1)
+            scale = (angle.clamp(max=0.5) / angle).detach()  # (B, 1), detach to stop grad through clamp
+            # When angle < 0.5: scale=1 (no change). When angle >= 0.5: scale < 1 (reduce magnitude)
+            # detach() ensures gradient flows through rot_vec, not through the scaling path
+            rot_vec_scaled = rot_vec * scale  # (B, 3), differentiable w.r.t. rot_vec
             
-            # Rodrigues' formula: rotation vector → quaternion
-            # When angle ≈ 0, use identity quaternion to avoid 0/0 in gradient
-            small_angle_mask = (angle < 1e-6)  # (B, 1)
-            
-            half_angle = angle_clamped / 2.0  # (B, 1)
-            sin_ha = torch.sin(half_angle)  # (B, 1)
+            half_angle = rot_vec_scaled.norm(dim=1, keepdim=True).clamp(min=1e-8) / 2.0  # (B, 1)
             cos_ha = torch.cos(half_angle)  # (B, 1)
-            axis = rot_vec / angle_clamped.clamp(min=1e-8)  # (B, 3), unit axis
-            dq = torch.cat([cos_ha, axis * sin_ha], dim=1)  # (B, 4)
-            
-            # For near-zero angles, use identity quaternion [1, 0, 0, 0]
-            # This avoids NaN gradients from the 0/0 in axis computation
-            identity_dq = torch.zeros_like(dq)
-            identity_dq[:, 0] = 1.0
-            dq = torch.where(small_angle_mask.expand_as(dq), identity_dq, dq)
+            sinc_factor = torch.sin(half_angle) / half_angle  # (B, 1), →1 as half_angle→0
+            dq = torch.cat([cos_ha, sinc_factor * rot_vec_scaled / 2.0], dim=1)  # (B, 4)
+            dq = F.normalize(dq, dim=1)
             
             # Update pose estimate: T_new = T_cur * Delta
             q_cur, t_cur = current_pose[:, :4], current_pose[:, 4:7]
