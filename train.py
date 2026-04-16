@@ -422,6 +422,12 @@ def parse_args():
                         help="Weight for delta pose supervision loss. 0 to disable. "
                              "Directly supervises the predicted (rot_vec, dt) against the true delta. "
                              "Recommended: 1.0-10.0")
+    parser.add_argument("--pretrained_encoder", type=str, default=None,
+                        help="Path to pretrained encoder checkpoint (from pretrain_encoder.py). "
+                             "Loads image_encoder, depth_encoder, depth_feat_align weights.")
+    parser.add_argument("--freeze_encoder_epochs", type=int, default=0,
+                        help="Freeze encoder for first N epochs during end-to-end training. "
+                             "0 = no freezing. Recommended: 2-5 epochs after pretraining.")
 
     return parser.parse_args()
 
@@ -502,6 +508,31 @@ def main():
     else:
         scheduler = None
 
+    # ─── Pretrained Encoder ────────────────────────────────────────────────
+    if getattr(args, 'pretrained_encoder', None):
+        pretrain_path = args.pretrained_encoder
+        if os.path.isfile(pretrain_path):
+            log_print(f"Loading pretrained encoder from: {pretrain_path}")
+            pretrain_ckpt = torch.load(pretrain_path, map_location="cpu")
+            pretrain_state = pretrain_ckpt.get("model_state_dict", pretrain_ckpt)
+            # Only load encoder-related weights
+            encoder_state = {k: v for k, v in pretrain_state.items()
+                             if any(k.startswith(p) for p in
+                                    ['image_encoder', 'depth_encoder', 'depth_feat_align'])}
+            missing, unexpected = model.load_state_dict(encoder_state, strict=False)
+            log_print(f"  Loaded {len(encoder_state)} encoder params")
+            if missing:
+                non_encoder_missing = [k for k in missing
+                                       if not any(k.startswith(p) for p in
+                                                  ['image_encoder', 'depth_encoder', 'depth_feat_align'])]
+                if non_encoder_missing:
+                    log_print(f"  Non-encoder missing (expected): {len(non_encoder_missing)} layers")
+            if unexpected:
+                log_print(f"  Unexpected keys: {unexpected}")
+            log_print(f"  ★ Pretrained encoder loaded successfully")
+        else:
+            log_print(f"Warning: pretrained encoder not found at {pretrain_path}")
+
     # ─── Resume ───────────────────────────────────────────────────────────
     start_epoch = 1
     best_val_loss = float("inf")
@@ -532,7 +563,19 @@ def main():
     log_print(f"Training: {args.epochs} epochs, batch_size={args.batch_size}, lr={args.lr}")
     log_print(f"{'='*60}\n")
 
+    freeze_encoder_epochs = getattr(args, 'freeze_encoder_epochs', 0)
+
     for epoch in range(start_epoch, args.epochs + 1):
+        # Freeze encoder for first N epochs if requested
+        if freeze_encoder_epochs > 0:
+            for name, param in model.named_parameters():
+                if any(k in name for k in ['image_encoder', 'depth_encoder', 'depth_feat_align']):
+                    param.requires_grad = (epoch > freeze_encoder_epochs)
+            if epoch <= freeze_encoder_epochs:
+                log_print(f"  [Epoch {epoch}] Encoder FROZEN (unfreeze after epoch {freeze_encoder_epochs})")
+            elif epoch == freeze_encoder_epochs + 1:
+                log_print(f"  [Epoch {epoch}] Encoder UNFROZEN — now training end-to-end")
+
         # Train
         train_metrics = train_one_epoch(
             model, train_loader, criterion, optimizer, device, epoch,
