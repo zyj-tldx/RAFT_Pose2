@@ -457,6 +457,7 @@ def main():
         num_pose_samples=ckpt_args.get("num_pose_samples", 16),
         pose_sample_std=ckpt_args.get("pose_sample_std", 0.01),
         init_pose_noise_std=ckpt_args.get("init_pose_noise_std", 0.05),
+        coarse_to_fine=ckpt_args.get("coarse_to_fine", False),
     )
     model.load_state_dict(checkpoint["model_state_dict"])
     model = model.to(device)

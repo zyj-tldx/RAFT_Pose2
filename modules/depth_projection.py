@@ -331,6 +331,169 @@ class CorrBlock(nn.Module):
 
         return corr_feats, confidence
 
+    def sample_coarse_then_fine(self, coords, top_k=3):
+        """
+        Two-phase coarse-to-fine correlation sampling for memory efficiency.
+
+        Phase 1 (Coarse): Evaluate ALL N samples using the coarsest pyramid level(s).
+                           Compute confidence to select top-K candidates.
+                           Cost: O(B*N) with tiny spatial dims — very cheap.
+        Phase 2 (Fine):   Perform full multi-level sampling on only the top-K samples.
+                           Cost: O(B*K) at full resolution — K << N saves memory.
+
+        Memory analysis (480×640 input, 8× downsample → 60×80 feat, 4 corr levels):
+          - Coarsest level: 8×10, gather = B*H*W*1*8*10 ≈ 0.05 MB per sample → negligible
+          - Fine sampling: only K=3 instead of N=36 samples at 60×80 → 12× memory reduction
+
+        Args:
+            coords: Sampling coordinates of shape (B, N, 2, H, W)
+            top_k: Number of top-confidence samples for fine sampling
+
+        Returns:
+            corr_feats_topk: Correlation features for top-K samples,
+                             shape (B*K, C_corr, H, W)
+            confidence: Confidence scores for all N samples, shape (B, N)
+            topk_indices: Indices of selected top-K samples, shape (B, K)
+        """
+        r = self.radius
+        B, N, C_coord, H, W = coords.shape
+
+        corr0 = self.corr_pyramid[0]
+        B_q, C_q, H_feat, W_feat = corr0.shape
+
+        # ============================================================
+        # Phase 1: Coarse confidence estimation for ALL N samples
+        # ============================================================
+        # Use the coarsest level for cheap confidence scoring
+        coarsest_level = self.num_levels - 1
+        corr_coarse = self.corr_pyramid[coarsest_level]
+        h2_c, w2_c = corr_coarse.shape[-2], corr_coarse.shape[-1]
+        scale_c = 2 ** coarsest_level
+
+        # Shared spatial indices (same for all samples)
+        h_idx = torch.arange(H, device=coords.device).view(1, H, 1).expand(B, H, W)
+        w_idx = torch.arange(W, device=coords.device).view(1, 1, W).expand(B, H, W)
+        h_idx = torch.clamp(h_idx, 0, H_feat - 1)
+        w_idx = torch.clamp(w_idx, 0, W_feat - 1)
+        corr_idx = (h_idx * W_feat + w_idx).reshape(B * H * W)  # (B*H*W,)
+        b_idx = torch.arange(B, device=coords.device).unsqueeze(1).expand(B, H * W).reshape(B * H * W)
+
+        # Local grid delta
+        dx = torch.linspace(-r, r, 2 * r + 1, dtype=corr_coarse.dtype, device=coords.device)
+        dy = torch.linspace(-r, r, 2 * r + 1, dtype=corr_coarse.dtype, device=coords.device)
+        delta_grid = torch.stack(torch.meshgrid(dy, dx, indexing="ij"), axis=-1)  # (2r+1, 2r+1, 2)
+        delta = delta_grid.view(1, 1, 1, 2 * r + 1, 2 * r + 1, 2)
+
+        # Gather ONCE at coarsest level — shared across all N samples
+        min_size = 2 * r + 1
+        if h2_c >= min_size and w2_c >= min_size:
+            corr_5d = corr_coarse.view(B, H_feat * W_feat, 1, h2_c, w2_c)
+            corr_gathered = corr_5d[b_idx, corr_idx]  # (B*H*W, 1, h2_c, w2_c) — very small!
+        else:
+            corr_gathered = None
+
+        # ── Evaluate confidence for ALL N samples in parallel ──
+        # Expand corr_gathered for B*N queries: (B*H*W, 1, h2_c, w2_c) -> (B*N*H*W, 1, h2_c, w2_c)
+        # Coarsest level is tiny, so this expansion is cheap.
+        if corr_gathered is not None:
+            corr_expanded = corr_gathered.unsqueeze(1).expand(-1, N, -1, -1, -1)
+            corr_expanded = corr_expanded.reshape(B * N * H * W, 1, h2_c, w2_c)
+
+            # All N coords at once: (B, N, 2, H, W) -> (B*N, H, W, 2)
+            coords_flat = coords.permute(0, 1, 3, 4, 2).reshape(B * N, H, W, 2)
+
+            centroid = coords_flat / scale_c
+            centroid = centroid.unsqueeze(3).unsqueeze(3)  # (B*N, H, W, 1, 1, 2)
+            sampling_coords = centroid + delta  # (B*N, H, W, 2r+1, 2r+1, 2)
+            sampling_coords = sampling_coords.reshape(B * N * H * W, 2 * r + 1, 2 * r + 1, 2)
+
+            corr_local = CorrBlock.bilinear_sampler(corr_expanded, sampling_coords)
+            corr_local = corr_local.squeeze(1).view(B * N, H, W, -1)  # (B*N, H, W, (2r+1)^2)
+
+            # Validity masks: (B*N, H, W)
+            valid_masks = (
+                (coords_flat[..., 0] >= 0) & (coords_flat[..., 0] <= W_feat - 1) &
+                (coords_flat[..., 1] >= 0) & (coords_flat[..., 1] <= H_feat - 1)
+            )
+
+            # Center correlation value per sample
+            center_vals = corr_local[:, :, :, r * (2 * r + 1) + r]  # (B*N, H, W)
+            center_vals = center_vals * valid_masks.float()
+            valid_counts = valid_masks.sum(dim=[1, 2]).float().clamp(min=1.0)  # (B*N,)
+            confidence = (center_vals.sum(dim=[1, 2]) / valid_counts).view(B, N)  # (B, N)
+        else:
+            confidence = torch.zeros(B, N, device=coords.device)
+
+        # Select top-K candidates
+        K = min(top_k, N)
+        _, topk_indices = confidence.topk(K, dim=1, largest=True)  # (B, K)
+
+        # ============================================================
+        # Phase 2: Full multi-level sampling on top-K only
+        # ============================================================
+        # Gather top-K coordinates: (B, K, 2, H, W)
+        topk_exp = topk_indices.unsqueeze(-1).unsqueeze(-1).unsqueeze(-1).expand(-1, -1, 2, H, W)
+        coords_topk = torch.gather(coords, 1, topk_exp)  # (B, K, 2, H, W)
+
+        # Full multi-level sampling for top-K samples
+        # Hybrid: coarse evaluation was parallel (cheap), fine sampling uses
+        # the shared corr_gathered trick to save memory (K=3 loop is negligible).
+        sample_out_pyramids = [[] for _ in range(K)]
+
+        # Pre-compute per-sample coords and validity masks
+        coords_topk_list = []
+        valid_masks_topk = []
+        for k in range(K):
+            coords_k = coords_topk[:, k].permute(0, 2, 3, 1)  # (B, H, W, 2)
+            coords_topk_list.append(coords_k)
+            valid_mask = (
+                (coords_k[..., 0] >= 0) & (coords_k[..., 0] <= W_feat - 1) &
+                (coords_k[..., 1] >= 0) & (coords_k[..., 1] <= H_feat - 1)
+            )
+            valid_masks_topk.append(valid_mask)
+
+        for i in range(self.num_levels):
+            corr = self.corr_pyramid[i]
+            h2_i, w2_i = corr.shape[-2], corr.shape[-1]
+            scale = 2 ** i
+
+            if h2_i < min_size or w2_i < min_size:
+                for k in range(K):
+                    sample_out_pyramids[k].append(
+                        torch.zeros(B, H, W, (2 * r + 1) ** 2,
+                                    dtype=corr.dtype, device=coords.device)
+                    )
+                continue
+
+            # Gather once per level — shared across K samples (memory-efficient)
+            corr_5d = corr.view(B, H_feat * W_feat, 1, h2_i, w2_i)
+            corr_gathered_fine = corr_5d[b_idx, corr_idx]  # (B*H*W, 1, h2_i, w2_i)
+
+            delta_scaled = delta_grid.view(1, 1, 1, 2 * r + 1, 2 * r + 1, 2)
+
+            for k in range(K):
+                centroid = coords_topk_list[k] / scale
+                centroid = centroid.unsqueeze(3).unsqueeze(3)
+                sampling_coords = centroid + delta_scaled
+                sampling_coords = sampling_coords.reshape(B * H * W, 2 * r + 1, 2 * r + 1, 2)
+
+                corr_local = CorrBlock.bilinear_sampler(corr_gathered_fine, sampling_coords)
+                corr_local = corr_local.squeeze(1).view(B, H, W, -1)
+                sample_out_pyramids[k].append(corr_local)
+
+        # Assemble outputs for top-K samples
+        sample_corr_feats = []
+        for k in range(K):
+            out = torch.cat(sample_out_pyramids[k], dim=-1)  # (B, H, W, C_corr)
+            out = out * valid_masks_topk[k].unsqueeze(-1).float()  # mask invalid
+            corr_feat_k = out.permute(0, 3, 1, 2).contiguous()  # (B, C_corr, H, W)
+            sample_corr_feats.append(corr_feat_k)
+
+        # Stack: (B, K, C_corr, H, W) -> (B*K, C_corr, H, W)
+        corr_feats_topk = torch.stack(sample_corr_feats, dim=1).reshape(B * K, -1, H, W)
+
+        return corr_feats_topk, confidence, topk_indices
+
     @staticmethod
     def corr(fmap1, fmap2):
         """

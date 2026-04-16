@@ -57,7 +57,8 @@ class RAFTPose(nn.Module):
         init_pose_noise_std=0.0,
         top_k=3,
         use_checkpoint=False,
-        use_amp=False
+        use_amp=False,
+        coarse_to_fine=False
     ):
         """
         Args:
@@ -74,6 +75,12 @@ class RAFTPose(nn.Module):
             top_k: Number of top-confidence samples to aggregate (default 3).
                    Uses confidence-weighted average of top-K correlation features.
                    Set to 1 for best-only selection (original behavior).
+            use_checkpoint: Use gradient checkpointing to save memory
+            use_amp: Use automatic mixed precision
+            coarse_to_fine: If True, use coarse-to-fine sampling strategy:
+                   Phase 1: evaluate ALL N samples on coarsest pyramid level (cheap)
+                   Phase 2: full multi-level sampling on only top-K samples (saves memory)
+                   Reduces peak memory from O(B*N) to O(B*K) for fine sampling.
         """
         super(RAFTPose, self).__init__()
         
@@ -91,6 +98,7 @@ class RAFTPose(nn.Module):
         self.top_k = min(top_k, num_pose_samples)  # top_k cannot exceed num_pose_samples
         self.downsample_factor = 8  # Total stride of image encoder (3 layers × stride 2)
         self.use_amp = use_amp
+        self.coarse_to_fine = coarse_to_fine
         
         # Image feature encoder
         if image_encoder == 'basic':
@@ -380,14 +388,18 @@ class RAFTPose(nn.Module):
         pose_samples = sampled_poses_to_matrices(pose_list)
 
         # Evaluate correlation confidence for all samples in parallel
-        corr_feats, confidence = self.sample_correlation_with_poses(
+        sample_result = self.sample_correlation_with_poses(
             pose_samples, depth, intrinsic_depth, intrinsic_rgb
         )
+        if self.coarse_to_fine:
+            corr_feats, confidence, topk_indices = sample_result
+        else:
+            corr_feats, confidence, topk_indices = sample_result[0], sample_result[1], None
 
         # Build direction encoding vectors: (B, actual_N, 6)
         dir_vecs = dir_vecs_raw.unsqueeze(0).expand(B, -1, -1)  # (B, actual_N, 6)
 
-        return pose_samples, confidence, corr_feats, dir_vecs
+        return pose_samples, confidence, corr_feats, dir_vecs, topk_indices
 
     @staticmethod
     def _batch_quaternion_multiply(q1, q2):
@@ -504,13 +516,16 @@ class RAFTPose(nn.Module):
         # Iterative pose refinement
         for it in range(self.num_iterations):
             # Generate directional pose samples with FIXED step size
-            pose_samples, confidence, corr_feats, dir_vecs = self.generate_directional_samples(
+            sample_result = self.generate_directional_samples(
                 current_pose, depth, intrinsic_depth, intrinsic_rgb,
                 base_step_rot=fixed_step,
                 base_step_trans=fixed_step
-            )  # pose_samples: (B, N, 4, 4), confidence: (B, N)
-            # corr_feats: (B*N, C_corr, H_feat, W_feat)
+            )
+            pose_samples, confidence, corr_feats, dir_vecs, topk_indices = sample_result
+            # pose_samples: (B, N, 4, 4), confidence: (B, N)
             # dir_vecs: (B, N, 6) — direction encoding per sample
+            # If coarse_to_fine: corr_feats is (B*K, C_corr, H, W), topk_indices is (B, K)
+            # Else:              corr_feats is (B*N, C_corr, H, W), topk_indices is None
 
             # Select best sample by confidence score
             best_idx = confidence.argmax(dim=1)  # (B,)
@@ -523,36 +538,61 @@ class RAFTPose(nn.Module):
                     corr_feats, size=(feat_h, feat_w),
                     mode='bilinear', align_corners=False
                 )
-            all_corr = corr_feats.view(batch_size, N_size, -1, feat_h, feat_w)  # (B, N, C_corr, H, W)
 
-            if self.top_k > 1 and N_size > 1:
-                # Top-K aggregation: weighted average of top-K confidence samples
-                K = min(self.top_k, N_size)
-                # Sort by confidence (descending)
-                sorted_indices = confidence.argsort(dim=1, descending=True)  # (B, N)
-                topk_indices = sorted_indices[:, :K]  # (B, K)
+            if self.coarse_to_fine and topk_indices is not None:
+                # ── Coarse-to-fine mode ──────────────────────────────
+                # corr_feats already contains only top-K samples: (B*K, C_corr, H, W)
+                # topk_indices tells us which of the N samples were selected: (B, K)
+                K = topk_indices.shape[1]
+                all_corr = corr_feats.view(batch_size, K, -1, feat_h, feat_w)  # (B, K, C_corr, H, W)
 
-                # Gather top-K features: (B, K, C_corr, H, W)
-                topk_feats = all_corr.gather(
-                    1, topk_indices.unsqueeze(2).unsqueeze(3).unsqueeze(4)
-                    .expand(-1, -1, all_corr.shape[2], feat_h, feat_w)
-                )  # (B, K, C_corr, H, W)
-
-                # Gather top-K confidence scores and softmax for weights
+                # Get top-K confidence scores for the selected indices
                 topk_conf = confidence.gather(1, topk_indices)  # (B, K)
                 topk_weights = F.softmax(topk_conf, dim=1)  # (B, K)
 
-                # Weighted average: (B, K, C_corr, H, W) * (B, K, 1, 1, 1) -> sum -> (B, C_corr, H, W)
-                weighted_feats = (topk_feats * topk_weights.unsqueeze(2).unsqueeze(3).unsqueeze(4)).sum(dim=1)
-                aggregated_corr = weighted_feats  # (B, C_corr, H, W)
+                if K > 1:
+                    # Weighted average: (B, K, C_corr, H, W) * (B, K, 1, 1, 1) -> sum
+                    weighted_feats = (all_corr * topk_weights.unsqueeze(2).unsqueeze(3).unsqueeze(4)).sum(dim=1)
+                    aggregated_corr = weighted_feats  # (B, C_corr, H, W)
 
-                # Weighted average of direction vectors: (B, K, 6) * (B, K, 1) -> sum -> (B, 6)
-                topk_dirs = dir_vecs.gather(1, topk_indices.unsqueeze(2).expand(-1, -1, 6))  # (B, K, 6)
-                direction_encoding = (topk_dirs * topk_weights.unsqueeze(2)).sum(dim=1)  # (B, 6)
+                    # Weighted average of direction vectors
+                    topk_dirs = dir_vecs.gather(1, topk_indices.unsqueeze(2).expand(-1, -1, 6))  # (B, K, 6)
+                    direction_encoding = (topk_dirs * topk_weights.unsqueeze(2)).sum(dim=1)  # (B, 6)
+                else:
+                    aggregated_corr = all_corr[:, 0]  # (B, C_corr, H, W)
+                    direction_encoding = dir_vecs.gather(1, topk_indices.unsqueeze(2).expand(-1, -1, 6))[:, 0]  # (B, 6)
             else:
-                # K=1: select best sample only (original behavior)
-                aggregated_corr = all_corr[torch.arange(batch_size, device=device), best_idx]  # (B, C_corr, H, W)
-                direction_encoding = dir_vecs[torch.arange(batch_size, device=device), best_idx]  # (B, 6)
+                # ── Original mode: all N samples have full features ──
+                all_corr = corr_feats.view(batch_size, N_size, -1, feat_h, feat_w)  # (B, N, C_corr, H, W)
+
+                if self.top_k > 1 and N_size > 1:
+                    # Top-K aggregation: weighted average of top-K confidence samples
+                    K = min(self.top_k, N_size)
+                    # Sort by confidence (descending)
+                    sorted_indices = confidence.argsort(dim=1, descending=True)  # (B, N)
+                    topk_idx_orig = sorted_indices[:, :K]  # (B, K)
+
+                    # Gather top-K features: (B, K, C_corr, H, W)
+                    topk_feats = all_corr.gather(
+                        1, topk_idx_orig.unsqueeze(2).unsqueeze(3).unsqueeze(4)
+                        .expand(-1, -1, all_corr.shape[2], feat_h, feat_w)
+                    )  # (B, K, C_corr, H, W)
+
+                    # Gather top-K confidence scores and softmax for weights
+                    topk_conf = confidence.gather(1, topk_idx_orig)  # (B, K)
+                    topk_weights = F.softmax(topk_conf, dim=1)  # (B, K)
+
+                    # Weighted average: (B, K, C_corr, H, W) * (B, K, 1, 1, 1) -> sum -> (B, C_corr, H, W)
+                    weighted_feats = (topk_feats * topk_weights.unsqueeze(2).unsqueeze(3).unsqueeze(4)).sum(dim=1)
+                    aggregated_corr = weighted_feats  # (B, C_corr, H, W)
+
+                    # Weighted average of direction vectors: (B, K, 6) * (B, K, 1) -> sum -> (B, 6)
+                    topk_dirs = dir_vecs.gather(1, topk_idx_orig.unsqueeze(2).expand(-1, -1, 6))  # (B, K, 6)
+                    direction_encoding = (topk_dirs * topk_weights.unsqueeze(2)).sum(dim=1)  # (B, 6)
+                else:
+                    # K=1: select best sample only (original behavior)
+                    aggregated_corr = all_corr[torch.arange(batch_size, device=device), best_idx]  # (B, C_corr, H, W)
+                    direction_encoding = dir_vecs[torch.arange(batch_size, device=device), best_idx]  # (B, 6)
 
             # Predict pose delta using aggregated correlation features + direction encoding
             # Output is 6D: [rx, ry, rz, tx, ty, tz] (rotation vector + translation)
@@ -671,10 +711,16 @@ class RAFTPose(nn.Module):
             depth_small, pose_samples, intrinsic_depth_s, intrinsic_rgb_s
         )  # (B, N, 2, feat_h, feat_w)
 
-        # Sample correlation volume per pose — returns (B*N, C_corr, H, W) + (B, N)
-        corr_feats, confidence = self.corr_block.sample_per_pose(projected_coords)
-
-        return corr_feats, confidence
+        if self.coarse_to_fine:
+            # Coarse-to-fine: cheap coarse scoring for all N, full sampling for top-K only
+            corr_feats_topk, confidence, topk_indices = self.corr_block.sample_coarse_then_fine(
+                projected_coords, top_k=self.top_k
+            )
+            return corr_feats_topk, confidence, topk_indices
+        else:
+            # Original: full multi-level sampling for all N samples
+            corr_feats, confidence = self.corr_block.sample_per_pose(projected_coords)
+            return corr_feats, confidence, None
     
     def compute_loss(self, pred_pose, gt_pose, reduction='mean'):
         """
@@ -731,5 +777,6 @@ def build_raft_pose(config):
         init_pose_noise_std=config.get('init_pose_noise_std', 0.05),
         top_k=config.get('top_k', 3),
         use_checkpoint=config.get('use_checkpoint', False),
-        use_amp=config.get('use_amp', False)
+        use_amp=config.get('use_amp', False),
+        coarse_to_fine=config.get('coarse_to_fine', False)
     )

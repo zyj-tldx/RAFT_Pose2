@@ -150,6 +150,7 @@ def build_model(args):
         init_pose_noise_std=args.init_pose_noise_std,
         use_checkpoint=getattr(args, 'use_checkpoint', False),
         use_amp=getattr(args, 'use_amp', False),
+        coarse_to_fine=getattr(args, 'coarse_to_fine', False),
     )
     return model
 
@@ -398,6 +399,10 @@ def parse_args():
                         help="Enable Automatic Mixed Precision (float16) for ~40%% memory reduction")
     parser.add_argument("--use_checkpoint", action="store_true",
                         help="Enable gradient checkpointing on encoders for ~50%% activation memory reduction")
+    parser.add_argument("--coarse_to_fine", action="store_true",
+                        help="Use coarse-to-fine correlation sampling: evaluate all N samples on "
+                             "coarsest pyramid level first, then full multi-level sampling on top-K only. "
+                             "Reduces peak memory from O(B*N) to O(B*K) for fine sampling.")
 
     return parser.parse_args()
 
