@@ -147,6 +147,8 @@ def build_model(args):
         num_pose_samples=args.num_pose_samples,
         pose_sample_std=args.pose_sample_std,
         init_pose_noise_std=args.init_pose_noise_std,
+        use_checkpoint=getattr(args, 'use_checkpoint', False),
+        use_amp=getattr(args, 'use_amp', False),
     )
     return model
 
@@ -189,6 +191,7 @@ def train_one_epoch(model, dataloader, criterion, optimizer, device, epoch,
         ], dim=1)  # (B, 7)
 
         # Forward — return all intermediate poses for sequence loss
+        # AMP autocast is handled inside the model (encoder-only), no need here
         _, pose_sequence = model(
             image=image,
             depth=depth,
@@ -340,6 +343,12 @@ def parse_args():
     parser.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu")
     parser.add_argument("--seed", type=int, default=42)
 
+    # Memory optimization
+    parser.add_argument("--use_amp", action="store_true",
+                        help="Enable Automatic Mixed Precision (float16) for ~40%% memory reduction")
+    parser.add_argument("--use_checkpoint", action="store_true",
+                        help="Enable gradient checkpointing on encoders for ~50%% activation memory reduction")
+
     return parser.parse_args()
 
 
@@ -437,6 +446,10 @@ def main():
         log_print(f"TensorBoard logging to: {tb_log_dir}")
 
     # ─── Training Loop ────────────────────────────────────────────────────
+    if getattr(args, 'use_amp', False):
+        log_print("AMP (float16 encoders) enabled")
+    if getattr(args, 'use_checkpoint', False):
+        log_print("Gradient checkpointing enabled")
     log_print(f"\n{'='*60}")
     log_print(f"Training: {args.epochs} epochs, batch_size={args.batch_size}, lr={args.lr}")
     log_print(f"{'='*60}\n")

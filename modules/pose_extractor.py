@@ -6,6 +6,7 @@ Extracts features from images and depth maps.
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.utils.checkpoint import checkpoint as torch_checkpoint
 
 
 class ResidualBlock(nn.Module):
@@ -70,9 +71,11 @@ class BasicEncoder(nn.Module):
         layer5 (2x ResBlock, stride=1)  → output_dim   ← new
         conv_out (1x1)                   → output_dim
     """
-    def __init__(self, output_dim=256, norm_fn='instance', dropout=0.0, in_feat=3):
+    def __init__(self, output_dim=256, norm_fn='instance', dropout=0.0, in_feat=3,
+                 use_checkpoint=False):
         super(BasicEncoder, self).__init__()
         self.norm_fn = norm_fn
+        self.use_checkpoint = use_checkpoint
         self.conv1 = nn.Conv2d(in_feat, 64, kernel_size=7, stride=2, padding=3)
         self.norm1 = nn.GroupNorm(num_groups=32, num_channels=64) if norm_fn == 'instance' else nn.BatchNorm2d(64)
         self.relu1 = nn.ReLU(inplace=True)
@@ -110,11 +113,18 @@ class BasicEncoder(nn.Module):
 
     def forward(self, x):
         out = self.relu1(self.norm1(self.conv1(x)))
-        out = self.layer1(out)
-        out = self.layer2(out)
-        out = self.layer3(out)
-        out = self.layer4(out)
-        out = self.layer5(out)
+        if self.use_checkpoint:
+            out = torch_checkpoint(self.layer1, out, use_reentrant=False)
+            out = torch_checkpoint(self.layer2, out, use_reentrant=False)
+            out = torch_checkpoint(self.layer3, out, use_reentrant=False)
+            out = torch_checkpoint(self.layer4, out, use_reentrant=False)
+            out = torch_checkpoint(self.layer5, out, use_reentrant=False)
+        else:
+            out = self.layer1(out)
+            out = self.layer2(out)
+            out = self.layer3(out)
+            out = self.layer4(out)
+            out = self.layer5(out)
         
         if self.dropout is not None:
             out = self.dropout(out)
@@ -127,9 +137,11 @@ class SmallEncoder(nn.Module):
     """
     Smaller CNN feature encoder for efficiency.
     """
-    def __init__(self, output_dim=128, norm_fn='instance', dropout=0.0, in_feat=3):
+    def __init__(self, output_dim=128, norm_fn='instance', dropout=0.0, in_feat=3,
+                 use_checkpoint=False):
         super(SmallEncoder, self).__init__()
         self.norm_fn = norm_fn
+        self.use_checkpoint = use_checkpoint
         self.conv1 = nn.Conv2d(in_feat, 32, kernel_size=7, stride=2, padding=3)
         self.norm1 = nn.GroupNorm(num_groups=4, num_channels=32) if norm_fn == 'instance' else nn.BatchNorm2d(32)
         self.relu1 = nn.ReLU(inplace=True)
@@ -164,9 +176,14 @@ class SmallEncoder(nn.Module):
 
     def forward(self, x):
         out = self.relu1(self.norm1(self.conv1(x)))
-        out = self.layer1(out)
-        out = self.layer2(out)
-        out = self.layer3(out)
+        if self.use_checkpoint:
+            out = torch_checkpoint(self.layer1, out, use_reentrant=False)
+            out = torch_checkpoint(self.layer2, out, use_reentrant=False)
+            out = torch_checkpoint(self.layer3, out, use_reentrant=False)
+        else:
+            out = self.layer1(out)
+            out = self.layer2(out)
+            out = self.layer3(out)
         
         if self.dropout is not None:
             out = self.dropout(out)
@@ -180,10 +197,12 @@ class DepthEncoder(nn.Module):
     Encoder for depth maps.
     Can include Fourier features for better geometric representation.
     """
-    def __init__(self, output_dim=128, norm_fn='instance', dropout=0.0, fourier_levels=-1):
+    def __init__(self, output_dim=128, norm_fn='instance', dropout=0.0, fourier_levels=-1,
+                 use_checkpoint=False):
         super(DepthEncoder, self).__init__()
         self.norm_fn = norm_fn
         self.fourier_levels = fourier_levels
+        self.use_checkpoint = use_checkpoint
         
         # Determine input channels
         self.in_feat = 1
@@ -254,9 +273,14 @@ class DepthEncoder(nn.Module):
             x = self._add_fourier_features(x)
         
         out = self.relu1(self.norm1(self.conv1(x)))
-        out = self.layer1(out)
-        out = self.layer2(out)
-        out = self.layer3(out)
+        if self.use_checkpoint:
+            out = torch_checkpoint(self.layer1, out, use_reentrant=False)
+            out = torch_checkpoint(self.layer2, out, use_reentrant=False)
+            out = torch_checkpoint(self.layer3, out, use_reentrant=False)
+        else:
+            out = self.layer1(out)
+            out = self.layer2(out)
+            out = self.layer3(out)
         
         if self.dropout is not None:
             out = self.dropout(out)

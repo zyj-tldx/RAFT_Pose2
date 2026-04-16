@@ -55,7 +55,9 @@ class RAFTPose(nn.Module):
         num_pose_samples=16,
         pose_sample_std=0.01,
         init_pose_noise_std=0.0,
-        top_k=3
+        top_k=3,
+        use_checkpoint=False,
+        use_amp=False
     ):
         """
         Args:
@@ -88,13 +90,16 @@ class RAFTPose(nn.Module):
         self.init_pose_noise_std = init_pose_noise_std
         self.top_k = min(top_k, num_pose_samples)  # top_k cannot exceed num_pose_samples
         self.downsample_factor = 8  # Total stride of image encoder (3 layers × stride 2)
+        self.use_amp = use_amp
         
         # Image feature encoder
         if image_encoder == 'basic':
-            self.image_encoder = BasicEncoder(output_dim=256, norm_fn='instance', dropout=0.1)
+            self.image_encoder = BasicEncoder(output_dim=256, norm_fn='instance', dropout=0.1,
+                                              use_checkpoint=use_checkpoint)
             self.fmap_dim = 256
         elif image_encoder == 'small':
-            self.image_encoder = SmallEncoder(output_dim=128, norm_fn='instance', dropout=0.1)
+            self.image_encoder = SmallEncoder(output_dim=128, norm_fn='instance', dropout=0.1,
+                                              use_checkpoint=use_checkpoint)
             self.fmap_dim = 128
         else:
             raise ValueError(f"Unknown image encoder: {image_encoder}")
@@ -102,7 +107,8 @@ class RAFTPose(nn.Module):
         # Depth feature encoder
         self.depth_encoder = DepthEncoder(
             output_dim=depth_dim,
-            fourier_levels=-1
+            fourier_levels=-1,
+            use_checkpoint=use_checkpoint
         )
         
         # Feature alignment layer: align depth features to match RGB feature dimension
@@ -394,9 +400,13 @@ class RAFTPose(nn.Module):
         batch_size = image.shape[0]
         device = image.device
         
-        # Extract features
-        fmap_rgb = self.image_encoder(image)  # (B, 256, H, W)
-        fmap_depth = self.depth_encoder(depth)  # (B, 32, H, W)
+        # Extract features (use AMP for encoders if enabled)
+        with torch.amp.autocast('cuda', enabled=self.use_amp):
+            fmap_rgb = self.image_encoder(image)  # (B, fmap_dim, H, W)
+            fmap_depth = self.depth_encoder(depth)  # (B, depth_dim, H, W)
+        # Ensure float32 for correlation and downstream ops
+        fmap_rgb = fmap_rgb.float()
+        fmap_depth = fmap_depth.float()
         
         # Align depth features to match RGB feature dimension for better correlation
         fmap_depth_aligned = self.depth_feat_align(fmap_depth)  # (B, 256, H, W)
@@ -658,5 +668,7 @@ def build_raft_pose(config):
         num_pose_samples=config.get('num_pose_samples', 16),
         pose_sample_std=config.get('pose_sample_std', 0.01),
         init_pose_noise_std=config.get('init_pose_noise_std', 0.05),
-        top_k=config.get('top_k', 3)
+        top_k=config.get('top_k', 3),
+        use_checkpoint=config.get('use_checkpoint', False),
+        use_amp=config.get('use_amp', False)
     )
