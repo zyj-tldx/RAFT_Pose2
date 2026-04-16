@@ -52,7 +52,7 @@ class RAFTPose(nn.Module):
         corr_levels=4,
         corr_radius=2,
         num_iterations=12,
-        num_pose_samples=16,
+        num_pose_samples=36,
         pose_sample_std=0.01,
         init_pose_noise_std=0.0,
         top_k=3,
@@ -84,8 +84,8 @@ class RAFTPose(nn.Module):
         self.corr_radius = corr_radius
         self.num_iterations = num_iterations
         self.num_pose_samples = num_pose_samples
-        if num_pose_samples not in (4, 8, 12, 16):
-            raise ValueError(f"num_pose_samples must be 4, 8, 12, or 16, got {num_pose_samples}")
+        if num_pose_samples not in (4, 8, 12, 16, 36):
+            raise ValueError(f"num_pose_samples must be 4, 8, 12, 16, or 36, got {num_pose_samples}")
         self.pose_sample_std = pose_sample_std
         self.init_pose_noise_std = init_pose_noise_std
         self.top_k = min(top_k, num_pose_samples)  # top_k cannot exceed num_pose_samples
@@ -196,6 +196,15 @@ class RAFTPose(nn.Module):
           8:  ±Rx, ±Ry, ±Tx, ±Ty (rotation + translation, no Rz/Tz)
           12: ±Rx, ±Ry, ±Rz, ±Tx, ±Ty, ±Tz (full 6-DOF)
           16: 12 directions + 4 diagonal (±Rx±Ry combinations)
+          36: 12 directions × 3 magnitudes (coarse-to-fine multi-scale)
+
+        For N=36, the 12 base directions are:
+          ±Rx, ±Ry, ±Rz, ±Tx, ±Ty, ±Tz
+        Each direction is sampled at 3 magnitude scales:
+          scale 1: base_step × 0.5  (fine)
+          scale 2: base_step × 1.0  (medium)
+          scale 3: base_step × 2.0  (coarse)
+        This provides both local refinement and large-range exploration.
 
         All samples are projected and evaluated in parallel (batched).
         The best sample is selected by correlation confidence.
@@ -222,84 +231,139 @@ class RAFTPose(nn.Module):
 
         q_cur, t_cur = current_pose[:, :4], current_pose[:, 4:7]
 
-        # Build direction list based on num_pose_samples
-        # Each direction: (rotation_axis, translation_dir)
-        # rotation_axis: (3,) — axis of rotation, zeros for translation-only
-        # translation_dir: (3,) — direction of translation, zeros for rotation-only
-        directions = []
-
-        if N >= 4:
-            # ±Tx, ±Ty — most important for camera-LiDAR calibration
-            directions += [
+        if N == 36:
+            # ── 36-sample mode: 12 directions × 3 magnitudes ──────────
+            # 12 base directions: full 6-DOF ±
+            base_directions = [
                 ([0, 0, 0], [1, 0, 0]),   # +Tx
                 ([0, 0, 0], [-1, 0, 0]),  # -Tx
                 ([0, 0, 0], [0, 1, 0]),   # +Ty
                 ([0, 0, 0], [0, -1, 0]),  # -Ty
-            ]
-
-        if N >= 8:
-            # ±Rx, ±Ry — in-plane rotation and pitch
-            directions += [
+                ([0, 0, 0], [0, 0, 1]),   # +Tz
+                ([0, 0, 0], [0, 0, -1]),  # -Tz
                 ([1, 0, 0], [0, 0, 0]),   # +Rx
                 ([-1, 0, 0], [0, 0, 0]),  # -Rx
                 ([0, 1, 0], [0, 0, 0]),   # +Ry
                 ([0, -1, 0], [0, 0, 0]),  # -Ry
-            ]
-
-        if N >= 12:
-            # ±Rz, ±Tz — roll and depth
-            directions += [
                 ([0, 0, 1], [0, 0, 0]),   # +Rz
                 ([0, 0, -1], [0, 0, 0]),  # -Rz
-                ([0, 0, 0], [0, 0, 1]),   # +Tz
-                ([0, 0, 0], [0, 0, -1]),  # -Tz
             ]
+            # 3 magnitude scales: fine / medium / coarse
+            scales = [0.5, 1.0, 2.0]
 
-        if N >= 16:
-            # Diagonal rotation combinations: ±Rx±Ry
-            directions += [
-                ([1, 1, 0], [0, 0, 0]),   # +Rx+Ry
-                ([1, -1, 0], [0, 0, 0]),  # +Rx-Ry
-                ([-1, 1, 0], [0, 0, 0]),  # -Rx+Ry
-                ([-1, -1, 0], [0, 0, 0]), # -Rx-Ry
-            ]
+            # Build per-sample (rot_axis, trans_dir, scale) tuples
+            # Order: for each direction, iterate all 3 scales
+            # [dir0_s0, dir0_s1, dir0_s2, dir1_s0, dir1_s1, dir1_s2, ...]
+            rot_axes_list = []
+            trans_dirs_list = []
+            scale_list = []
+            for rot_dir, trans_dir in base_directions:
+                for s in scales:
+                    rot_axes_list.append(rot_dir)
+                    trans_dirs_list.append(trans_dir)
+                    scale_list.append(s)
 
-        # Trim to exact N (in case N is not 4/8/12/16)
-        directions = directions[:N]
-        actual_N = len(directions)
+            actual_N = len(rot_axes_list)  # 36
 
-        # Precompute quaternion components
-        half_angle = torch.tensor(base_step_rot / 2.0, device=device, dtype=torch.float32)
-        cos_ha = torch.cos(half_angle)
-        sin_ha = torch.sin(half_angle)
+            # Build tensors: (actual_N, 3)
+            rot_axes = torch.tensor(rot_axes_list, device=device, dtype=torch.float32)
+            trans_dirs = torch.tensor(trans_dirs_list, device=device, dtype=torch.float32)
+            sample_scales = torch.tensor(scale_list, device=device, dtype=torch.float32)  # (36,)
 
-        # Build all perturbation quaternions and translations in batch
-        # rot_axes: (actual_N, 3), trans_dirs: (actual_N, 3)
-        rot_axes = torch.tensor([d[0] for d in directions], device=device, dtype=torch.float32)
-        trans_dirs = torch.tensor([d[1] for d in directions], device=device, dtype=torch.float32)
+            # Normalize rotation axes (identity for zero-axes translation directions)
+            rot_norms = rot_axes.norm(dim=1, keepdim=True).clamp(min=1e-8)
+            rot_axes_normed = rot_axes / rot_norms
 
-        # Normalize rotation axes (important for diagonal directions like [1,1,0])
-        rot_norms = rot_axes.norm(dim=1, keepdim=True).clamp(min=1e-8)
-        rot_axes = rot_axes / rot_norms
+            # Per-sample rotation angles: base_step_rot * scale
+            rot_angles = base_step_rot * sample_scales  # (36,)
+            half_angles = rot_angles / 2.0  # (36,)
+            cos_ha = torch.cos(half_angles)
+            sin_ha = torch.sin(half_angles)
 
-        # Build quaternions: (actual_N, 4)
-        all_dq = torch.zeros(actual_N, 4, device=device)
-        all_dq[:, 0] = cos_ha
-        all_dq[:, 1] = rot_axes[:, 0] * sin_ha
-        all_dq[:, 2] = rot_axes[:, 1] * sin_ha
-        all_dq[:, 3] = rot_axes[:, 2] * sin_ha
+            # Build per-sample quaternions: (36, 4)
+            all_dq = torch.zeros(actual_N, 4, device=device)
+            all_dq[:, 0] = cos_ha
+            all_dq[:, 1] = rot_axes_normed[:, 0] * sin_ha
+            all_dq[:, 2] = rot_axes_normed[:, 1] * sin_ha
+            all_dq[:, 3] = rot_axes_normed[:, 2] * sin_ha
 
-        # Build translations: (actual_N, 3)
-        all_dt = trans_dirs * base_step_trans
+            # Build per-sample translations: (36, 3)
+            # scale applied to translation magnitude
+            all_dt = trans_dirs * (base_step_trans * sample_scales.unsqueeze(1))  # (36, 3)
 
-        # Apply perturbations: expand for batch
-        # all_dq: (actual_N, 4) -> (B, actual_N, 4)
-        # all_dt: (actual_N, 3) -> (B, actual_N, 3)
+            # Direction encoding: use the original (unscaled) direction + scale info
+            # Embed scale into direction vector by multiplying
+            dir_vecs_raw = torch.cat([rot_axes, trans_dirs], dim=1)  # (36, 6)
+
+        else:
+            # ── Original modes: 4 / 8 / 12 / 16 ──────────────────────
+            directions = []
+
+            if N >= 4:
+                directions += [
+                    ([0, 0, 0], [1, 0, 0]),   # +Tx
+                    ([0, 0, 0], [-1, 0, 0]),  # -Tx
+                    ([0, 0, 0], [0, 1, 0]),   # +Ty
+                    ([0, 0, 0], [0, -1, 0]),  # -Ty
+                ]
+
+            if N >= 8:
+                directions += [
+                    ([1, 0, 0], [0, 0, 0]),   # +Rx
+                    ([-1, 0, 0], [0, 0, 0]),  # -Rx
+                    ([0, 1, 0], [0, 0, 0]),   # +Ry
+                    ([0, -1, 0], [0, 0, 0]),  # -Ry
+                ]
+
+            if N >= 12:
+                directions += [
+                    ([0, 0, 1], [0, 0, 0]),   # +Rz
+                    ([0, 0, -1], [0, 0, 0]),  # -Rz
+                    ([0, 0, 0], [0, 0, 1]),   # +Tz
+                    ([0, 0, 0], [0, 0, -1]),  # -Tz
+                ]
+
+            if N >= 16:
+                directions += [
+                    ([1, 1, 0], [0, 0, 0]),   # +Rx+Ry
+                    ([1, -1, 0], [0, 0, 0]),  # +Rx-Ry
+                    ([-1, 1, 0], [0, 0, 0]),  # -Rx+Ry
+                    ([-1, -1, 0], [0, 0, 0]), # -Rx-Ry
+                ]
+
+            directions = directions[:N]
+            actual_N = len(directions)
+
+            # Precompute quaternion components (single scale)
+            half_angle = torch.tensor(base_step_rot / 2.0, device=device, dtype=torch.float32)
+            cos_ha = torch.cos(half_angle)
+            sin_ha = torch.sin(half_angle)
+
+            rot_axes = torch.tensor([d[0] for d in directions], device=device, dtype=torch.float32)
+            trans_dirs = torch.tensor([d[1] for d in directions], device=device, dtype=torch.float32)
+
+            # Normalize rotation axes
+            rot_norms = rot_axes.norm(dim=1, keepdim=True).clamp(min=1e-8)
+            rot_axes = rot_axes / rot_norms
+
+            # Build quaternions: (actual_N, 4)
+            all_dq = torch.zeros(actual_N, 4, device=device)
+            all_dq[:, 0] = cos_ha
+            all_dq[:, 1] = rot_axes[:, 0] * sin_ha
+            all_dq[:, 2] = rot_axes[:, 1] * sin_ha
+            all_dq[:, 3] = rot_axes[:, 2] * sin_ha
+
+            # Build translations: (actual_N, 3)
+            all_dt = trans_dirs * base_step_trans
+
+            dir_vecs_raw = torch.cat([rot_axes, trans_dirs], dim=1)  # (actual_N, 6)
+
+        # ── Common: apply perturbations and sample correlation ─────────
+        # Expand for batch
         all_dq = all_dq.unsqueeze(0).expand(B, -1, -1)  # (B, actual_N, 4)
         all_dt = all_dt.unsqueeze(0).expand(B, -1, -1)  # (B, actual_N, 3)
 
         # Apply all perturbations at once using vectorized operations
-        # q_cur: (B, 4) -> (B, 1, 4), t_cur: (B, 3) -> (B, 1, 3)
         q_cur_exp = q_cur.unsqueeze(1)  # (B, 1, 4)
         t_cur_exp = t_cur.unsqueeze(1)  # (B, 1, 3)
 
@@ -319,12 +383,9 @@ class RAFTPose(nn.Module):
         corr_feats, confidence = self.sample_correlation_with_poses(
             pose_samples, depth, intrinsic_depth, intrinsic_rgb
         )
-        # corr_feats: (B*actual_N, C_corr, H_feat, W_feat), confidence: (B, actual_N)
 
-        # Build direction encoding vectors: (B, N, 6)
-        # [rot_axis_x, rot_axis_y, rot_axis_z, trans_dir_x, trans_dir_y, trans_dir_z]
-        dir_vecs = torch.cat([rot_axes, trans_dirs], dim=1)  # (actual_N, 6)
-        dir_vecs = dir_vecs.unsqueeze(0).expand(B, -1, -1)  # (B, actual_N, 6)
+        # Build direction encoding vectors: (B, actual_N, 6)
+        dir_vecs = dir_vecs_raw.unsqueeze(0).expand(B, -1, -1)  # (B, actual_N, 6)
 
         return pose_samples, confidence, corr_feats, dir_vecs
 
@@ -665,7 +726,7 @@ def build_raft_pose(config):
         corr_levels=config.get('corr_levels', 4),
         corr_radius=config.get('corr_radius', 2),
         num_iterations=config.get('num_iterations', 12),
-        num_pose_samples=config.get('num_pose_samples', 16),
+        num_pose_samples=config.get('num_pose_samples', 36),
         pose_sample_std=config.get('pose_sample_std', 0.01),
         init_pose_noise_std=config.get('init_pose_noise_std', 0.05),
         top_k=config.get('top_k', 3),
