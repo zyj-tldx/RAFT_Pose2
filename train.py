@@ -32,7 +32,7 @@ RAFT_POSE_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(RAFT_POSE_DIR))
 
 from raft_pose import RAFTPose
-from pose_loss import PoseLoss
+from pose_loss import PoseLoss, DeltaPoseLoss
 from dataloader import get_dataloader
 
 
@@ -160,7 +160,8 @@ def train_one_epoch(model, dataloader, criterion, optimizer, device, epoch,
                     grad_clip=1.0, log_interval=10, grad_accum_steps=1,
                     seq_loss_gamma=0.8, total_epochs=100,
                     curriculum_start=0.01, curriculum_end=0.1,
-                    curriculum_warmup=0.8):
+                    curriculum_warmup=0.8,
+                    delta_criterion=None, delta_loss_weight=1.0):
     """Train for one epoch with sequence loss and gradient accumulation."""
     model.train()
 
@@ -229,21 +230,31 @@ def train_one_epoch(model, dataloader, criterion, optimizer, device, epoch,
 
         init_pose = torch.cat([init_quat, init_trans], dim=1)  # (B, 7)
 
-        # Forward — return all intermediate poses for sequence loss
+        # Forward — return all intermediate poses AND deltas for sequence loss
         # AMP autocast is handled inside the model (encoder-only), no need here
-        _, pose_sequence = model(
+        _, extra = model(
             image=image,
             depth=depth,
             intrinsic_rgb=intrinsic_rgb,
             intrinsic_depth=intrinsic_depth,
             init_pose=init_pose,
             return_all_poses=True,
+            return_all_deltas=True,
         )
+        pose_sequence = extra['pose_sequence']
+        delta_sequence = extra['delta_sequence']
 
-        # Sequence loss with exponential weighting
+        # Sequence loss with exponential weighting (end-pose supervision)
         loss, details = criterion.forward_sequence(
             pose_sequence, gt_pose, gamma=seq_loss_gamma
         )
+
+        # Delta supervision loss (direct delta guidance)
+        if delta_criterion is not None and delta_loss_weight > 0:
+            delta_loss, delta_details = delta_criterion(
+                delta_sequence, pose_sequence, gt_pose, gamma=seq_loss_gamma
+            )
+            loss = loss + delta_loss_weight * delta_loss
 
         # Scale loss for gradient accumulation
         loss = loss / grad_accum_steps
@@ -300,12 +311,18 @@ def validate(model, dataloader, criterion, device):
         intrinsic_depth = batch["intrinsic_depth"].to(device)
         gt_pose = batch["gt_pose"].to(device)
 
-        pred_pose = model(
+        result = model(
             image=image,
             depth=depth,
             intrinsic_rgb=intrinsic_rgb,
             intrinsic_depth=intrinsic_depth,
         )
+
+        # Handle both old format (tensor) and new format (tensor, dict)
+        if isinstance(result, tuple):
+            pred_pose = result[0]
+        else:
+            pred_pose = result
 
         loss, details = criterion(pred_pose, gt_pose)
 
@@ -341,7 +358,7 @@ def parse_args():
     parser.add_argument("--context_dim", type=int, default=64)
     parser.add_argument("--depth_dim", type=int, default=32)
     parser.add_argument("--corr_levels", type=int, default=4)
-    parser.add_argument("--corr_radius", type=int, default=2)
+    parser.add_argument("--corr_radius", type=int, default=4)
     parser.add_argument("--num_iterations", type=int, default=6)
     parser.add_argument("--pose_sample_std", type=float, default=0.05)
     parser.add_argument("--init_pose_noise_std", type=float, default=0.00)
@@ -401,6 +418,10 @@ def parse_args():
                         help="Use coarse-to-fine correlation sampling: evaluate all N samples on "
                              "coarsest pyramid level first, then full multi-level sampling on top-K only. "
                              "Reduces peak memory from O(B*N) to O(B*K) for fine sampling.")
+    parser.add_argument("--delta_loss_weight", type=float, default=1.0,
+                        help="Weight for delta pose supervision loss. 0 to disable. "
+                             "Directly supervises the predicted (rot_vec, dt) against the true delta. "
+                             "Recommended: 1.0-10.0")
 
     return parser.parse_args()
 
@@ -458,6 +479,10 @@ def main():
 
     # ─── Loss ─────────────────────────────────────────────────────────────
     criterion = PoseLoss(rot_weight=args.rot_weight, trans_weight=args.trans_weight)
+    delta_criterion = DeltaPoseLoss(rot_weight=args.rot_weight, trans_weight=args.trans_weight)
+    delta_loss_weight = getattr(args, 'delta_loss_weight', 1.0)
+    if delta_loss_weight > 0:
+        log_print(f"Delta supervision loss enabled (weight={delta_loss_weight})")
 
     # ─── Optimizer & Scheduler ────────────────────────────────────────────
     optimizer = torch.optim.AdamW(
@@ -518,6 +543,8 @@ def main():
             curriculum_start=args.curriculum_start,
             curriculum_end=args.curriculum_end,
             curriculum_warmup=args.curriculum_warmup,
+            delta_criterion=delta_criterion,
+            delta_loss_weight=delta_loss_weight,
         )
 
         # Validate

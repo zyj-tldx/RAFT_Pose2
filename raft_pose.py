@@ -50,7 +50,7 @@ class RAFTPose(nn.Module):
         context_dim=64,
         depth_dim=32,
         corr_levels=4,
-        corr_radius=2,
+        corr_radius=4,
         num_iterations=12,
         pose_sample_std=0.01,
         init_pose_noise_std=0.0,
@@ -393,7 +393,8 @@ class RAFTPose(nn.Module):
         intrinsic_rgb, 
         intrinsic_depth, 
         init_pose=None,
-        return_all_poses=False
+        return_all_poses=False,
+        return_all_deltas=False
     ):
         """
         Forward pass of RAFT-Pose model.
@@ -405,10 +406,12 @@ class RAFTPose(nn.Module):
             intrinsic_depth: Depth camera (LiDAR) intrinsic matrix, shape (B, 3, 3)
             init_pose: Initial pose estimate of shape (B, 7), optional
             return_all_poses: Whether to return all intermediate poses
+            return_all_deltas: Whether to return all predicted deltas (rot_vec, dt) per iteration
         
         Returns:
             final_pose: Final pose estimate of shape (B, 7)
             pose_sequence: All intermediate poses (if return_all_poses=True)
+            delta_sequence: Dict with 'rot_vec' and 'dt' per iteration (if return_all_deltas=True)
         """
         batch_size = image.shape[0]
         device = image.device
@@ -446,6 +449,11 @@ class RAFTPose(nn.Module):
         # Track all poses if requested
         if return_all_poses:
             pose_sequence = [current_pose.clone()]
+        
+        # Track all deltas if requested
+        if return_all_deltas:
+            rot_vec_sequence = []
+            dt_sequence = []
         
         # Fixed step size: let the model learn step sizing via ConvGRU + sequence loss
         # ConvGRU hidden state implicitly encodes iteration-awareness, and the
@@ -571,6 +579,11 @@ class RAFTPose(nn.Module):
             dq = torch.cat([cos_ha, sinc_factor * rot_vec_scaled / 2.0], dim=1)  # (B, 4)
             dq = F.normalize(dq, dim=1)
             
+            # Track deltas BEFORE applying update (these are the raw predictions)
+            if return_all_deltas:
+                rot_vec_sequence.append(rot_vec.clone())  # (B, 3) raw rotation vector
+                dt_sequence.append(dt.clone())  # (B, 3) raw translation delta
+            
             # Update pose estimate: T_new = T_cur * Delta
             q_cur, t_cur = current_pose[:, :4], current_pose[:, 4:7]
             q_new, t_new = apply_pose_update((q_cur, t_cur), (dq, dt))
@@ -581,11 +594,23 @@ class RAFTPose(nn.Module):
             if return_all_poses:
                 pose_sequence.append(current_pose.clone())
         
+        # Build return values
+        result_pose = current_pose
+        extra = {}
+        
         if return_all_poses:
-            pose_sequence = torch.stack(pose_sequence, dim=1)  # (B, num_iters+1, 7)
-            return current_pose, pose_sequence
+            extra['pose_sequence'] = torch.stack(pose_sequence, dim=1)  # (B, num_iters+1, 7)
+        
+        if return_all_deltas:
+            extra['delta_sequence'] = {
+                'rot_vec': torch.stack(rot_vec_sequence, dim=1),  # (B, K, 3)
+                'dt': torch.stack(dt_sequence, dim=1),  # (B, K, 3)
+            }
+        
+        if extra:
+            return result_pose, extra
         else:
-            return current_pose
+            return result_pose
     
     def sample_correlation_with_poses(
         self,
@@ -709,7 +734,7 @@ def build_raft_pose(config):
         context_dim=config.get('context_dim', 64),
         depth_dim=config.get('depth_dim', 32),
         corr_levels=config.get('corr_levels', 4),
-        corr_radius=config.get('corr_radius', 2),
+        corr_radius=config.get('corr_radius', 4),
         num_iterations=config.get('num_iterations', 12),
         pose_sample_std=config.get('pose_sample_std', 0.01),
         init_pose_noise_std=config.get('init_pose_noise_std', 0.05),

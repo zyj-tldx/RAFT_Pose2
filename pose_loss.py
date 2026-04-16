@@ -265,3 +265,136 @@ class PoseLoss(nn.Module):
         }
 
         return total_loss / weight_sum, details
+
+
+def quat_conjugate(q):
+    """Quaternion conjugate (= inverse for unit quaternions). q: (..., 4) in (w,x,y,z)."""
+    return torch.cat([q[..., :1], -q[..., 1:]], dim=-1)
+
+
+def quat_multiply(q1, q2):
+    """Hamilton product of two quaternions. (..., 4) in (w,x,y,z)."""
+    w1, x1, y1, z1 = q1[..., 0], q1[..., 1], q1[..., 2], q1[..., 3]
+    w2, x2, y2, z2 = q2[..., 0], q2[..., 1], q2[..., 2], q2[..., 3]
+    w = w1*w2 - x1*x2 - y1*y2 - z1*z2
+    x = w1*x2 + x1*w2 + y1*z2 - z1*y2
+    y = w1*y2 - x1*z2 + y1*w2 + z1*x2
+    z = w1*z2 + x1*y2 - y1*x2 + z1*w2
+    return torch.stack([w, x, y, z], dim=-1)
+
+
+def quat_rotate(q, v):
+    """Rotate vector v by quaternion q. q: (..., 4), v: (..., 3)."""
+    q_v = torch.cat([torch.zeros_like(v[..., :1]), v], dim=-1)
+    q_inv = quat_conjugate(q)
+    return quat_multiply(quat_multiply(q, q_v), q_inv)[..., 1:]
+
+
+def quat_to_rotvec(q):
+    """
+    Convert quaternion to rotation vector (axis * angle).
+    q: (..., 4) in (w, x, y, z).
+    Returns: rot_vec (..., 3)
+    """
+    q = F.normalize(q, dim=-1)
+    # Ensure w >= 0 for canonical form
+    sign = torch.sign(q[..., :1])
+    sign = torch.where(sign == 0, torch.ones_like(sign), sign)
+    q = q * sign
+
+    sin_half = q[..., 1:].norm(dim=-1, keepdim=True).clamp(min=1e-8)
+    cos_half = q[..., :1]
+    half_angle = torch.atan2(sin_half, cos_half)  # (..., 1)
+    # rot_vec = axis * 2 * half_angle = (q_xyz / sin_half) * 2 * half_angle
+    sinc = torch.sin(half_angle) / half_angle  # → 1 when half_angle → 0
+    rot_vec = q[..., 1:] / sin_half * half_angle * sinc
+    return rot_vec
+
+
+class DeltaPoseLoss(nn.Module):
+    """
+    Direct supervision on the predicted pose delta (rot_vec, dt) per iteration.
+
+    For each iteration i, the "ideal" delta that would correct the remaining error is:
+        true_dq = inverse(current_pose_quat) * gt_quat
+        true_dt = inverse(current_pose_R) @ (gt_trans - current_pose_trans)
+
+    We then convert true_dq → true_rot_vec for L1 comparison with the raw model output.
+    This gives the model a strong, direct learning signal instead of only end-pose supervision.
+
+    Usage:
+        delta_loss_fn = DeltaPoseLoss(rot_weight=1.0, trans_weight=1.0)
+        loss, details = delta_loss_fn(delta_sequence, pose_sequence, gt_pose, gamma=0.8)
+    """
+
+    def __init__(self, rot_weight=1.0, trans_weight=1.0):
+        super(DeltaPoseLoss, self).__init__()
+        self.rot_weight = rot_weight
+        self.trans_weight = trans_weight
+
+    def forward(self, delta_sequence, pose_sequence, gt_pose, gamma=0.8):
+        """
+        Args:
+            delta_sequence: Dict with:
+                'rot_vec': (B, K, 3) — predicted rotation vectors per iteration
+                'dt': (B, K, 3) — predicted translation deltas per iteration
+            pose_sequence: (B, K+1, 7) — poses at each step (index 0 = init_pose)
+            gt_pose: (B, 7) — ground truth pose [w, x, y, z, tx, ty, tz]
+            gamma: exponential weighting (same as sequence loss)
+
+        Returns:
+            total_loss: scalar
+            details: dict with logging info
+        """
+        pred_rot_vecs = delta_sequence['rot_vec']  # (B, K, 3)
+        pred_dts = delta_sequence['dt']             # (B, K, 3)
+        B, K, _ = pred_rot_vecs.shape
+
+        gt_quat = gt_pose[:, :4]    # (B, 4)
+        gt_trans = gt_pose[:, 4:7]  # (B, 3)
+
+        total_loss = torch.tensor(0.0, device=gt_pose.device)
+        total_rot_loss = 0.0
+        total_trans_loss = 0.0
+        weight_sum = 0.0
+
+        for i in range(K):
+            weight = gamma ** (K - 1 - i)
+
+            # Current pose at this iteration (before applying delta)
+            cur_pose = pose_sequence[:, i, :]  # (B, 7)
+            cur_quat = F.normalize(cur_pose[:, :4], dim=1)  # (B, 4)
+            cur_trans = cur_pose[:, 4:7]  # (B, 3)
+
+            # Compute true delta: T_delta = T_cur^{-1} * T_gt
+            # Rotation: true_dq = conj(cur_quat) * gt_quat
+            true_dq = quat_multiply(quat_conjugate(cur_quat), gt_quat)  # (B, 4)
+            true_dq = F.normalize(true_dq, dim=1)
+
+            # Convert true_dq to rotation vector for direct comparison
+            true_rot_vec = quat_to_rotvec(true_dq)  # (B, 3)
+
+            # Translation: true_dt = R_cur^{-1} @ (gt_trans - cur_trans)
+            residual_trans = gt_trans - cur_trans  # (B, 3)
+            true_dt = quat_rotate(quat_conjugate(cur_quat), residual_trans)  # (B, 3)
+
+            # L1 loss on rotation vector
+            rot_loss = F.l1_loss(pred_rot_vecs[:, i], true_rot_vec)
+            # L1 loss on translation delta
+            trans_loss = F.l1_loss(pred_dts[:, i], true_dt)
+
+            total_loss = total_loss + weight * (self.rot_weight * rot_loss + self.trans_weight * trans_loss)
+            total_rot_loss += weight * rot_loss.item()
+            total_trans_loss += weight * trans_loss.item()
+            weight_sum += weight
+
+        total_rot_loss /= weight_sum
+        total_trans_loss /= weight_sum
+
+        details = {
+            'delta_rot_loss': total_rot_loss,
+            'delta_trans_loss': total_trans_loss,
+            'delta_total_loss': (total_loss / weight_sum).item(),
+        }
+
+        return total_loss / weight_sum, details

@@ -84,6 +84,7 @@ class CorrBlock(nn.Module):
     """
     4D correlation volume for feature matching.
     Computes all-pairs correlation between two feature maps.
+    Uses cosine similarity (L2-normalized features) for scale-invariant matching.
     """
     def __init__(self, fmap1, fmap2, num_levels=4, radius=4):
         """
@@ -98,7 +99,9 @@ class CorrBlock(nn.Module):
         self.radius = radius
         self.corr_pyramid = []
         
-        # Compute all-pairs correlation
+        # Compute all-pairs correlation using normalized features (cosine similarity)
+        # This ensures confidence is scale-invariant and decreases monotonically
+        # with pose error, unlike unnormalized dot products.
         corr = CorrBlock.corr(fmap1, fmap2)
         
         batch, h1, w1, dim, h2, w2 = corr.shape
@@ -364,8 +367,14 @@ class CorrBlock(nn.Module):
         # ============================================================
         # Phase 1: Coarse confidence estimation for ALL N samples
         # ============================================================
-        # Use the coarsest level for cheap confidence scoring
+        # Use the coarsest level that can fit the local patch (2r+1 × 2r+1)
+        min_size = 2 * r + 1
         coarsest_level = self.num_levels - 1
+        for lvl in range(self.num_levels - 1, -1, -1):
+            h_lvl, w_lvl = self.corr_pyramid[lvl].shape[-2:]
+            if h_lvl >= min_size and w_lvl >= min_size:
+                coarsest_level = lvl
+                break
         corr_coarse = self.corr_pyramid[coarsest_level]
         h2_c, w2_c = corr_coarse.shape[-2], corr_coarse.shape[-1]
         scale_c = 2 ** coarsest_level
@@ -497,7 +506,12 @@ class CorrBlock(nn.Module):
     @staticmethod
     def corr(fmap1, fmap2):
         """
-        Compute all-pairs correlation between two feature maps.
+        Compute all-pairs cosine similarity between two feature maps.
+        
+        Features are L2-normalized per spatial position before computing
+        dot products, yielding cosine similarities in [-1, 1].
+        This makes the correlation scale-invariant: confidence reflects
+        feature alignment quality rather than feature magnitude.
         
         Args:
             fmap1: Feature map 1, shape (B, C, H, W)
@@ -507,12 +521,17 @@ class CorrBlock(nn.Module):
             Correlation volume of shape (B, H1, W1, 1, H2, W2)
         """
         batch, dim, ht, wd = fmap1.shape
-        fmap1 = fmap1.view(batch, dim, ht * wd)
-        fmap2 = fmap2.view(batch, dim, ht * wd)
         
-        corr = torch.matmul(fmap1.transpose(1, 2), fmap2)
+        # L2-normalize features per spatial position for cosine similarity
+        fmap1_norm = F.normalize(fmap1, dim=1)  # (B, C, H, W)
+        fmap2_norm = F.normalize(fmap2, dim=1)  # (B, C, H, W)
+        
+        fmap1_flat = fmap1_norm.view(batch, dim, ht * wd)
+        fmap2_flat = fmap2_norm.view(batch, dim, ht * wd)
+        
+        corr = torch.matmul(fmap1_flat.transpose(1, 2), fmap2_flat)
         corr = corr.view(batch, ht, wd, 1, ht, wd)
-        return corr / torch.sqrt(torch.tensor(dim).float())
+        return corr
     
     @staticmethod
     def bilinear_sampler(img, coords, mode="bilinear", mask_mode=""):

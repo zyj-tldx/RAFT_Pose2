@@ -139,8 +139,13 @@ class PoseRegressionHead(nn.Module):
             elif 'bias' in name and name != 'pose_conv.bias':
                 nn.init.zeros_(param)
         
-        # Zero initialization: output = 0 → identity delta (no pose change)
-        nn.init.zeros_(self.pose_conv.weight)
+        # Small random initialization for pose_conv (NOT zero!).
+        # Zero-init blocks gradient flow: d(loss)/d(input) = weight, which is 0.
+        # Using a small Kaiming init so initial output is small but gradients flow.
+        nn.init.kaiming_normal_(self.pose_conv.weight, mode='fan_out', nonlinearity='relu')
+        # Scale down by 0.01 so initial predictions are tiny (≈ identity delta)
+        with torch.no_grad():
+            self.pose_conv.weight.mul_(0.01)
         nn.init.zeros_(self.pose_conv.bias)
     
     def forward(self, x):
