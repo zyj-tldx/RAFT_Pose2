@@ -145,7 +145,6 @@ def build_model(args):
         corr_levels=args.corr_levels,
         corr_radius=args.corr_radius,
         num_iterations=args.num_iterations,
-        num_pose_samples=args.num_pose_samples,
         pose_sample_std=args.pose_sample_std,
         init_pose_noise_std=args.init_pose_noise_std,
         use_checkpoint=getattr(args, 'use_checkpoint', False),
@@ -344,7 +343,6 @@ def parse_args():
     parser.add_argument("--corr_levels", type=int, default=4)
     parser.add_argument("--corr_radius", type=int, default=2)
     parser.add_argument("--num_iterations", type=int, default=12)
-    parser.add_argument("--num_pose_samples", type=int, default=36)
     parser.add_argument("--pose_sample_std", type=float, default=0.01)
     parser.add_argument("--init_pose_noise_std", type=float, default=0.05)
 

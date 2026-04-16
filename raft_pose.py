@@ -52,7 +52,6 @@ class RAFTPose(nn.Module):
         corr_levels=4,
         corr_radius=2,
         num_iterations=12,
-        num_pose_samples=36,
         pose_sample_std=0.01,
         init_pose_noise_std=0.0,
         top_k=3,
@@ -69,7 +68,6 @@ class RAFTPose(nn.Module):
             corr_levels: Number of pyramid levels for correlation volume
             corr_radius: Radius for local correlation sampling
             num_iterations: Number of iterations for pose refinement
-            num_pose_samples: Number of pose samples for correlation lookup
             pose_sample_std: Standard deviation for pose perturbation sampling
             init_pose_noise_std: Standard deviation for initial pose noise
             top_k: Number of top-confidence samples to aggregate (default 3).
@@ -90,12 +88,10 @@ class RAFTPose(nn.Module):
         self.corr_levels = corr_levels
         self.corr_radius = corr_radius
         self.num_iterations = num_iterations
-        self.num_pose_samples = num_pose_samples
-        if num_pose_samples not in (4, 8, 12, 16, 36):
-            raise ValueError(f"num_pose_samples must be 4, 8, 12, 16, or 36, got {num_pose_samples}")
+        self.num_pose_samples = 36  # Fixed: 12 directions × 3 magnitude scales
         self.pose_sample_std = pose_sample_std
         self.init_pose_noise_std = init_pose_noise_std
-        self.top_k = min(top_k, num_pose_samples)  # top_k cannot exceed num_pose_samples
+        self.top_k = min(top_k, self.num_pose_samples)  # top_k cannot exceed num_pose_samples
         self.downsample_factor = 8  # Total stride of image encoder (3 layers × stride 2)
         self.use_amp = use_amp
         self.coarse_to_fine = coarse_to_fine
@@ -135,8 +131,8 @@ class RAFTPose(nn.Module):
         
         # Pose update network
         # corr_dim is now per-sample C_corr (not N*C_corr), so the network
-        # is decoupled from num_pose_samples — training and inference can use
-        # different numbers of samples.
+        # is decoupled from the number of pose samples — training and inference
+        # can handle variable numbers of samples.
         per_sample_corr_dim = (2 * corr_radius + 1) ** 2 * corr_levels
         self.pose_update_net = PoseUpdateNet(
             hidden_dim=hidden_dim,
@@ -197,16 +193,11 @@ class RAFTPose(nn.Module):
                                      intrinsic_rgb, base_step_rot=0.02,
                                      base_step_trans=0.02):
         """
-        Generate pose samples along fixed directions based on num_pose_samples.
+        Generate pose samples along fixed directional perturbations.
 
-        Sampling strategies by num_pose_samples:
-          4:  ±Tx, ±Ty (translation only, fastest)
-          8:  ±Rx, ±Ry, ±Tx, ±Ty (rotation + translation, no Rz/Tz)
-          12: ±Rx, ±Ry, ±Rz, ±Tx, ±Ty, ±Tz (full 6-DOF)
-          16: 12 directions + 4 diagonal (±Rx±Ry combinations)
-          36: 12 directions × 3 magnitudes (coarse-to-fine multi-scale)
+        Sampling strategy: 12 directions × 3 magnitude scales = 36 samples + 1 identity.
 
-        For N=36, the 12 base directions are:
+        The 12 base directions cover full 6-DOF:
           ±Rx, ±Ry, ±Rz, ±Tx, ±Ty, ±Tz
         Each direction is sampled at 3 magnitude scales:
           scale 1: base_step × 0.5  (fine)
@@ -214,8 +205,8 @@ class RAFTPose(nn.Module):
           scale 3: base_step × 2.0  (coarse)
         This provides both local refinement and large-range exploration.
 
-        All samples are projected and evaluated in parallel (batched).
-        The best sample is selected by correlation confidence.
+        An identity (zero perturbation) sample is appended so the model
+        can learn to "stay put" when the pose is already good.
 
         Args:
             current_pose: Current pose estimate of shape (B, 7)
@@ -235,136 +226,71 @@ class RAFTPose(nn.Module):
         """
         B = current_pose.shape[0]
         device = current_pose.device
-        N = self.num_pose_samples
 
         q_cur, t_cur = current_pose[:, :4], current_pose[:, 4:7]
 
-        if N == 36:
-            # ── 36-sample mode: 12 directions × 3 magnitudes ──────────
-            # 12 base directions: full 6-DOF ±
-            base_directions = [
-                ([0, 0, 0], [1, 0, 0]),   # +Tx
-                ([0, 0, 0], [-1, 0, 0]),  # -Tx
-                ([0, 0, 0], [0, 1, 0]),   # +Ty
-                ([0, 0, 0], [0, -1, 0]),  # -Ty
-                ([0, 0, 0], [0, 0, 1]),   # +Tz
-                ([0, 0, 0], [0, 0, -1]),  # -Tz
-                ([1, 0, 0], [0, 0, 0]),   # +Rx
-                ([-1, 0, 0], [0, 0, 0]),  # -Rx
-                ([0, 1, 0], [0, 0, 0]),   # +Ry
-                ([0, -1, 0], [0, 0, 0]),  # -Ry
-                ([0, 0, 1], [0, 0, 0]),   # +Rz
-                ([0, 0, -1], [0, 0, 0]),  # -Rz
-            ]
-            # 3 magnitude scales: fine / medium / coarse
-            scales = [0.5, 1.0, 2.0]
+        # ── 36-sample mode: 12 directions × 3 magnitudes ──────────
+        # 12 base directions: full 6-DOF ±
+        base_directions = [
+            ([0, 0, 0], [1, 0, 0]),   # +Tx
+            ([0, 0, 0], [-1, 0, 0]),  # -Tx
+            ([0, 0, 0], [0, 1, 0]),   # +Ty
+            ([0, 0, 0], [0, -1, 0]),  # -Ty
+            ([0, 0, 0], [0, 0, 1]),   # +Tz
+            ([0, 0, 0], [0, 0, -1]),  # -Tz
+            ([1, 0, 0], [0, 0, 0]),   # +Rx
+            ([-1, 0, 0], [0, 0, 0]),  # -Rx
+            ([0, 1, 0], [0, 0, 0]),   # +Ry
+            ([0, -1, 0], [0, 0, 0]),  # -Ry
+            ([0, 0, 1], [0, 0, 0]),   # +Rz
+            ([0, 0, -1], [0, 0, 0]),  # -Rz
+        ]
+        # 3 magnitude scales: fine / medium / coarse
+        scales = [0.5, 1.0, 2.0]
 
-            # Build per-sample (rot_axis, trans_dir, scale) tuples
-            # Order: for each direction, iterate all 3 scales
-            # [dir0_s0, dir0_s1, dir0_s2, dir1_s0, dir1_s1, dir1_s2, ...]
-            rot_axes_list = []
-            trans_dirs_list = []
-            scale_list = []
-            for rot_dir, trans_dir in base_directions:
-                for s in scales:
-                    rot_axes_list.append(rot_dir)
-                    trans_dirs_list.append(trans_dir)
-                    scale_list.append(s)
+        # Build per-sample (rot_axis, trans_dir, scale) tuples
+        # Order: for each direction, iterate all 3 scales
+        # [dir0_s0, dir0_s1, dir0_s2, dir1_s0, dir1_s1, dir1_s2, ...]
+        rot_axes_list = []
+        trans_dirs_list = []
+        scale_list = []
+        for rot_dir, trans_dir in base_directions:
+            for s in scales:
+                rot_axes_list.append(rot_dir)
+                trans_dirs_list.append(trans_dir)
+                scale_list.append(s)
 
-            actual_N = len(rot_axes_list)  # 36
+        actual_N = len(rot_axes_list)  # 36
 
-            # Build tensors: (actual_N, 3)
-            rot_axes = torch.tensor(rot_axes_list, device=device, dtype=torch.float32)
-            trans_dirs = torch.tensor(trans_dirs_list, device=device, dtype=torch.float32)
-            sample_scales = torch.tensor(scale_list, device=device, dtype=torch.float32)  # (36,)
+        # Build tensors: (actual_N, 3)
+        rot_axes = torch.tensor(rot_axes_list, device=device, dtype=torch.float32)
+        trans_dirs = torch.tensor(trans_dirs_list, device=device, dtype=torch.float32)
+        sample_scales = torch.tensor(scale_list, device=device, dtype=torch.float32)  # (36,)
 
-            # Normalize rotation axes (identity for zero-axes translation directions)
-            rot_norms = rot_axes.norm(dim=1, keepdim=True).clamp(min=1e-8)
-            rot_axes_normed = rot_axes / rot_norms
+        # Normalize rotation axes (identity for zero-axes translation directions)
+        rot_norms = rot_axes.norm(dim=1, keepdim=True).clamp(min=1e-8)
+        rot_axes_normed = rot_axes / rot_norms
 
-            # Per-sample rotation angles: base_step_rot * scale
-            rot_angles = base_step_rot * sample_scales  # (36,)
-            half_angles = rot_angles / 2.0  # (36,)
-            cos_ha = torch.cos(half_angles)
-            sin_ha = torch.sin(half_angles)
+        # Per-sample rotation angles: base_step_rot * scale
+        rot_angles = base_step_rot * sample_scales  # (36,)
+        half_angles = rot_angles / 2.0  # (36,)
+        cos_ha = torch.cos(half_angles)
+        sin_ha = torch.sin(half_angles)
 
-            # Build per-sample quaternions: (36, 4)
-            all_dq = torch.zeros(actual_N, 4, device=device)
-            all_dq[:, 0] = cos_ha
-            all_dq[:, 1] = rot_axes_normed[:, 0] * sin_ha
-            all_dq[:, 2] = rot_axes_normed[:, 1] * sin_ha
-            all_dq[:, 3] = rot_axes_normed[:, 2] * sin_ha
+        # Build per-sample quaternions: (36, 4)
+        all_dq = torch.zeros(actual_N, 4, device=device)
+        all_dq[:, 0] = cos_ha
+        all_dq[:, 1] = rot_axes_normed[:, 0] * sin_ha
+        all_dq[:, 2] = rot_axes_normed[:, 1] * sin_ha
+        all_dq[:, 3] = rot_axes_normed[:, 2] * sin_ha
 
-            # Build per-sample translations: (36, 3)
-            # scale applied to translation magnitude
-            all_dt = trans_dirs * (base_step_trans * sample_scales.unsqueeze(1))  # (36, 3)
+        # Build per-sample translations: (36, 3)
+        # scale applied to translation magnitude
+        all_dt = trans_dirs * (base_step_trans * sample_scales.unsqueeze(1))  # (36, 3)
 
-            # Direction encoding: use the original (unscaled) direction + scale info
-            # Embed scale into direction vector by multiplying
-            dir_vecs_raw = torch.cat([rot_axes, trans_dirs], dim=1)  # (36, 6)
-
-        else:
-            # ── Original modes: 4 / 8 / 12 / 16 ──────────────────────
-            directions = []
-
-            if N >= 4:
-                directions += [
-                    ([0, 0, 0], [1, 0, 0]),   # +Tx
-                    ([0, 0, 0], [-1, 0, 0]),  # -Tx
-                    ([0, 0, 0], [0, 1, 0]),   # +Ty
-                    ([0, 0, 0], [0, -1, 0]),  # -Ty
-                ]
-
-            if N >= 8:
-                directions += [
-                    ([1, 0, 0], [0, 0, 0]),   # +Rx
-                    ([-1, 0, 0], [0, 0, 0]),  # -Rx
-                    ([0, 1, 0], [0, 0, 0]),   # +Ry
-                    ([0, -1, 0], [0, 0, 0]),  # -Ry
-                ]
-
-            if N >= 12:
-                directions += [
-                    ([0, 0, 1], [0, 0, 0]),   # +Rz
-                    ([0, 0, -1], [0, 0, 0]),  # -Rz
-                    ([0, 0, 0], [0, 0, 1]),   # +Tz
-                    ([0, 0, 0], [0, 0, -1]),  # -Tz
-                ]
-
-            if N >= 16:
-                directions += [
-                    ([1, 1, 0], [0, 0, 0]),   # +Rx+Ry
-                    ([1, -1, 0], [0, 0, 0]),  # +Rx-Ry
-                    ([-1, 1, 0], [0, 0, 0]),  # -Rx+Ry
-                    ([-1, -1, 0], [0, 0, 0]), # -Rx-Ry
-                ]
-
-            directions = directions[:N]
-            actual_N = len(directions)
-
-            # Precompute quaternion components (single scale)
-            half_angle = torch.tensor(base_step_rot / 2.0, device=device, dtype=torch.float32)
-            cos_ha = torch.cos(half_angle)
-            sin_ha = torch.sin(half_angle)
-
-            rot_axes = torch.tensor([d[0] for d in directions], device=device, dtype=torch.float32)
-            trans_dirs = torch.tensor([d[1] for d in directions], device=device, dtype=torch.float32)
-
-            # Normalize rotation axes
-            rot_norms = rot_axes.norm(dim=1, keepdim=True).clamp(min=1e-8)
-            rot_axes = rot_axes / rot_norms
-
-            # Build quaternions: (actual_N, 4)
-            all_dq = torch.zeros(actual_N, 4, device=device)
-            all_dq[:, 0] = cos_ha
-            all_dq[:, 1] = rot_axes[:, 0] * sin_ha
-            all_dq[:, 2] = rot_axes[:, 1] * sin_ha
-            all_dq[:, 3] = rot_axes[:, 2] * sin_ha
-
-            # Build translations: (actual_N, 3)
-            all_dt = trans_dirs * base_step_trans
-
-            dir_vecs_raw = torch.cat([rot_axes, trans_dirs], dim=1)  # (actual_N, 6)
+        # Direction encoding: use the original (unscaled) direction + scale info
+        # Embed scale into direction vector by multiplying
+        dir_vecs_raw = torch.cat([rot_axes, trans_dirs], dim=1)  # (36, 6)
 
         # ── Append identity (zero perturbation) sample ────────────────
         # This ensures the model can "see" the correlation at the current pose.
@@ -786,7 +712,6 @@ def build_raft_pose(config):
         corr_levels=config.get('corr_levels', 4),
         corr_radius=config.get('corr_radius', 2),
         num_iterations=config.get('num_iterations', 12),
-        num_pose_samples=config.get('num_pose_samples', 36),
         pose_sample_std=config.get('pose_sample_std', 0.01),
         init_pose_noise_std=config.get('init_pose_noise_std', 0.05),
         top_k=config.get('top_k', 3),
