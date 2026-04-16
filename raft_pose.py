@@ -366,6 +366,20 @@ class RAFTPose(nn.Module):
 
             dir_vecs_raw = torch.cat([rot_axes, trans_dirs], dim=1)  # (actual_N, 6)
 
+        # ── Append identity (zero perturbation) sample ────────────────
+        # This ensures the model can "see" the correlation at the current pose.
+        # Without it, all samples are perturbations AWAY from the current pose,
+        # so the network cannot learn to "stay put" when the pose is already good.
+        # The identity sample acts as an anchor for stable convergence.
+        identity_dq = torch.tensor([[1.0, 0.0, 0.0, 0.0]], device=device)  # quat identity
+        identity_dt = torch.zeros(1, 3, device=device)  # zero translation
+        identity_dir = torch.zeros(1, 6, device=device)  # zero direction encoding
+
+        all_dq = torch.cat([all_dq, identity_dq], dim=0)  # (actual_N+1, 4)
+        all_dt = torch.cat([all_dt, identity_dt], dim=0)  # (actual_N+1, 3)
+        dir_vecs_raw = torch.cat([dir_vecs_raw, identity_dir], dim=0)  # (actual_N+1, 6)
+        actual_N = actual_N + 1  # now includes identity
+
         # ── Common: apply perturbations and sample correlation ─────────
         # Expand for batch
         all_dq = all_dq.unsqueeze(0).expand(B, -1, -1)  # (B, actual_N, 4)
