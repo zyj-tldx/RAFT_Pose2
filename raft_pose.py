@@ -246,7 +246,7 @@ class RAFTPose(nn.Module):
             ([0, 0, -1], [0, 0, 0]),  # -Rz
         ]
         # 3 magnitude scales: fine / medium / coarse
-        scales = [0.5, 1.0, 2.0]
+        scales = [0.25, 1.0, 4.0]
 
         # Build per-sample (rot_axis, trans_dir, scale) tuples
         # Order: for each direction, iterate all 3 scales

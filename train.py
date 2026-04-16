@@ -342,9 +342,9 @@ def parse_args():
     parser.add_argument("--depth_dim", type=int, default=32)
     parser.add_argument("--corr_levels", type=int, default=4)
     parser.add_argument("--corr_radius", type=int, default=2)
-    parser.add_argument("--num_iterations", type=int, default=12)
-    parser.add_argument("--pose_sample_std", type=float, default=0.01)
-    parser.add_argument("--init_pose_noise_std", type=float, default=0.05)
+    parser.add_argument("--num_iterations", type=int, default=6)
+    parser.add_argument("--pose_sample_std", type=float, default=0.05)
+    parser.add_argument("--init_pose_noise_std", type=float, default=0.00)
 
     # Training
     parser.add_argument("--epochs", type=int, default=50)
@@ -363,14 +363,14 @@ def parse_args():
     # Loss weights
     parser.add_argument("--rot_weight", type=float, default=100.0,
                         help="Weight for rotation loss (in degrees via rad-to-deg scaling)")
-    parser.add_argument("--trans_weight", type=float, default=10.0,
+    parser.add_argument("--trans_weight", type=float, default=20.0,
                         help="Weight for translation loss (in meters)")
 
     # Curriculum learning
-    parser.add_argument("--curriculum_start", type=float, default=0.01,
+    parser.add_argument("--curriculum_start", type=float, default=0.1,
                         help="Initial noise level for curriculum learning (rad/m). "
                              "~0.01 = 0.57° / 1cm — model starts near GT.")
-    parser.add_argument("--curriculum_end", type=float, default=0.2,
+    parser.add_argument("--curriculum_end", type=float, default=0.5,
                         help="Final noise level for curriculum learning (rad/m). "
                              "~0.2 = 11.5° / 20cm — model handles large errors.")
     parser.add_argument("--curriculum_warmup", type=float, default=0.8,
