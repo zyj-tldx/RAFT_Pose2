@@ -242,3 +242,62 @@ with torch.no_grad():
 - RAFT: Recurrent All-Pairs Field Transforms for Optical Flow
 - CMRNext: Camera-LiDAR Matching for Localization and Extrinsic Calibration
 - 7Scenes: Scene Coordinate Regression for Camera Localization
+
+## 训练参考
+
+=== 同类方法的数据规模参考 ===
+
+  RAFT (光流)
+    参数: 5M, 数据: 229K pairs (FlyingChairs)+FlyingThings, 训练: ~200K steps
+
+  CMRNext (camera-LiDAR)
+    参数: ~10M, 数据: KITTI 43K + synthetic, 训练: ~100-200 epochs
+
+  DeepV2D (深度)
+    参数: ~10M, 数据: ScanNet 50K+ scenes, 训练: ~100 epochs
+
+  DFC (位姿回归)
+    参数: ~5M, 数据: 7Scenes ~5K-10K pairs, 训练: ~200 epochs
+
+  PoseNet (位姿回归)
+    参数: ~4M, 数据: 7Scenes ~5K frames, 训练: ~500 epochs
+
+=== 本模型分析 ===
+
+模型参数: 3.15M (Small) / 13.85M (Basic)
+当前数据: 474 训练样本
+参数/样本比: 6656:1 (严重不足)
+
+=== 数据需求估算 ===
+
+按参数量估计 (参考同类方法):
+  Small (3.15M): 建议 3K-10K 样本, 即参数/样本比 300:1 ~ 1000:1
+  Basic (13.85M): 建议 10K-50K 样本
+
+但注意: 这个任务不是逐像素回归，而是全局 7D 回归
+每个样本提供的监督信号覆盖整个网络 (不是只有局部)
+所以实际需要的数据可能比参数量估算的少
+
+=== 7Scenes 完整数据潜力 ===
+
+  窗口 5 帧: ~1,000 训练对
+  窗口 10 帧: ~2,000 训练对
+  窗口 20 帧: ~4,000 训练对
+  窗口 30 帧: ~6,000 训练对
+
+=== 推荐方案 ===
+
+1. 扩展数据到 ~5000-10000 样本
+   - 7Scenes chess 场景所有 5 个训练序列的帧对
+   - 每帧配前后 10-20 帧生成对
+   - 也可以加入 7Scenes 其他 6 个场景
+
+2. 训练轮数: 100-300 epochs (取决于数据量)
+   - 数据少 (< 1K): 300-500 epochs, 需要 early stopping
+   - 数据中 (3K-5K): 150-200 epochs
+   - 数据多 (> 10K): 80-150 epochs
+
+3. 当前最实际的方案:
+   - 重新生成 chess 配置: ~5000 样本 (5 seqs × 40帧 × 25对/帧)
+   - 训练 200 epochs + early stopping
+   - 加入所有 7Scenes 场景: 可达 ~30K 样本

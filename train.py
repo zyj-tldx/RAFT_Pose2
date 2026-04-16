@@ -24,6 +24,7 @@ from pathlib import Path
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from torch.utils.tensorboard import SummaryWriter
 
 # Setup import path
@@ -144,9 +145,11 @@ def build_model(args):
         corr_levels=args.corr_levels,
         corr_radius=args.corr_radius,
         num_iterations=args.num_iterations,
-        num_pose_samples=args.num_pose_samples,
         pose_sample_std=args.pose_sample_std,
         init_pose_noise_std=args.init_pose_noise_std,
+        use_checkpoint=getattr(args, 'use_checkpoint', False),
+        use_amp=getattr(args, 'use_amp', False),
+        coarse_to_fine=getattr(args, 'coarse_to_fine', False),
     )
     return model
 
@@ -155,7 +158,9 @@ def build_model(args):
 
 def train_one_epoch(model, dataloader, criterion, optimizer, device, epoch,
                     grad_clip=1.0, log_interval=10, grad_accum_steps=1,
-                    seq_loss_gamma=0.8):
+                    seq_loss_gamma=0.8, total_epochs=100,
+                    curriculum_start=0.01, curriculum_end=0.1,
+                    curriculum_warmup=0.8):
     """Train for one epoch with sequence loss and gradient accumulation."""
     model.train()
 
@@ -179,16 +184,53 @@ def train_one_epoch(model, dataloader, criterion, optimizer, device, epoch,
         intrinsic_depth = batch["intrinsic_depth"].to(device)
         gt_pose = batch["gt_pose"].to(device)
 
-        # Initial pose: identity (assumes image and depth are aligned)
-        # The model's job is to refine from this starting point toward GT relative pose
+        # Curriculum learning: initial pose from GT + noise
+        # Noise level increases linearly from curriculum_start to curriculum_end
+        # over the first curriculum_warmup_fraction of total epochs.
+        # This lets the model first learn small refinements, then progressively
+        # handle larger initial pose errors.
         B = image.size(0)
-        init_pose = torch.cat([
-            torch.ones(B, 1, device=device),   # qw = 1
-            torch.zeros(B, 3, device=device),   # qx, qy, qz = 0
-            torch.zeros(B, 3, device=device),   # tx, ty, tz = 0
-        ], dim=1)  # (B, 7)
+        gt_quat = gt_pose[:, :4]   # (B, 4)
+        gt_trans = gt_pose[:, 4:7]  # (B, 3)
+
+        # Compute current noise level from curriculum schedule
+        progress = min(1.0, (epoch - 1) / max(1, total_epochs * curriculum_warmup))
+        noise_level = curriculum_start + (curriculum_end - curriculum_start) * progress
+
+        # Add noise to GT quaternion: small angular perturbation
+        quat_noise = torch.randn(B, 3, device=device) * noise_level
+        # Convert small angle noise to quaternion delta via Rodrigues
+        noise_angles = quat_noise.norm(dim=1, keepdim=True)
+        noise_angles_clamped = noise_angles.clamp(max=3.1415926)
+        sin_na = torch.sin(noise_angles_clamped / 2.0)
+        cos_na = torch.cos(noise_angles_clamped / 2.0)
+        noise_axes = quat_noise / noise_angles.clamp(min=1e-8)
+        dq_noise = torch.cat([cos_na, noise_axes * sin_na], dim=1)  # (B, 4)
+        # Handle near-zero noise
+        tiny_mask = (noise_angles < 1e-6).expand_as(dq_noise)
+        dq_identity = torch.zeros_like(dq_noise)
+        dq_identity[:, 0] = 1.0
+        dq_noise = torch.where(tiny_mask, dq_identity, dq_noise)
+
+        # Compose: init_quat = gt_quat * dq_noise
+        w1, x1, y1, z1 = gt_quat[:, 0], gt_quat[:, 1], gt_quat[:, 2], gt_quat[:, 3]
+        w2, x2, y2, z2 = dq_noise[:, 0], dq_noise[:, 1], dq_noise[:, 2], dq_noise[:, 3]
+        init_quat = torch.stack([
+            w1*w2 - x1*x2 - y1*y2 - z1*z2,
+            w1*x2 + x1*w2 + y1*z2 - z1*y2,
+            w1*y2 - x1*z2 + y1*w2 + z1*x2,
+            w1*z2 + x1*y2 - y1*x2 + z1*w2,
+        ], dim=1)
+        init_quat = F.normalize(init_quat, dim=1)
+
+        # Add noise to GT translation
+        trans_noise = torch.randn(B, 3, device=device) * noise_level
+        init_trans = gt_trans + trans_noise
+
+        init_pose = torch.cat([init_quat, init_trans], dim=1)  # (B, 7)
 
         # Forward — return all intermediate poses for sequence loss
+        # AMP autocast is handled inside the model (encoder-only), no need here
         _, pose_sequence = model(
             image=image,
             depth=depth,
@@ -299,9 +341,8 @@ def parse_args():
     parser.add_argument("--context_dim", type=int, default=64)
     parser.add_argument("--depth_dim", type=int, default=32)
     parser.add_argument("--corr_levels", type=int, default=4)
-    parser.add_argument("--corr_radius", type=int, default=4)
+    parser.add_argument("--corr_radius", type=int, default=2)
     parser.add_argument("--num_iterations", type=int, default=12)
-    parser.add_argument("--num_pose_samples", type=int, default=16)
     parser.add_argument("--pose_sample_std", type=float, default=0.01)
     parser.add_argument("--init_pose_noise_std", type=float, default=0.05)
 
@@ -320,10 +361,21 @@ def parse_args():
                         choices=["cosine", "step", "none"])
 
     # Loss weights
-    parser.add_argument("--rot_weight", type=float, default=5.0,
-                        help="Weight for rotation loss")
+    parser.add_argument("--rot_weight", type=float, default=100.0,
+                        help="Weight for rotation loss (in degrees via rad-to-deg scaling)")
     parser.add_argument("--trans_weight", type=float, default=10.0,
-                        help="Weight for translation loss")
+                        help="Weight for translation loss (in meters)")
+
+    # Curriculum learning
+    parser.add_argument("--curriculum_start", type=float, default=0.01,
+                        help="Initial noise level for curriculum learning (rad/m). "
+                             "~0.01 = 0.57° / 1cm — model starts near GT.")
+    parser.add_argument("--curriculum_end", type=float, default=0.2,
+                        help="Final noise level for curriculum learning (rad/m). "
+                             "~0.2 = 11.5° / 20cm — model handles large errors.")
+    parser.add_argument("--curriculum_warmup", type=float, default=0.8,
+                        help="Fraction of total epochs over which noise ramps up. "
+                             "0.8 = noise reaches max at 80%% of training.")
 
     # Checkpointing
     parser.add_argument("--checkpoint_dir", type=str, default="checkpoints")
@@ -339,6 +391,16 @@ def parse_args():
     # Device
     parser.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu")
     parser.add_argument("--seed", type=int, default=42)
+
+    # Memory optimization
+    parser.add_argument("--use_amp", action="store_true",
+                        help="Enable Automatic Mixed Precision (float16) for ~40%% memory reduction")
+    parser.add_argument("--use_checkpoint", action="store_true",
+                        help="Enable gradient checkpointing on encoders for ~50%% activation memory reduction")
+    parser.add_argument("--coarse_to_fine", action="store_true",
+                        help="Use coarse-to-fine correlation sampling: evaluate all N samples on "
+                             "coarsest pyramid level first, then full multi-level sampling on top-K only. "
+                             "Reduces peak memory from O(B*N) to O(B*K) for fine sampling.")
 
     return parser.parse_args()
 
@@ -437,6 +499,10 @@ def main():
         log_print(f"TensorBoard logging to: {tb_log_dir}")
 
     # ─── Training Loop ────────────────────────────────────────────────────
+    if getattr(args, 'use_amp', False):
+        log_print("AMP (float16 encoders) enabled")
+    if getattr(args, 'use_checkpoint', False):
+        log_print("Gradient checkpointing enabled")
     log_print(f"\n{'='*60}")
     log_print(f"Training: {args.epochs} epochs, batch_size={args.batch_size}, lr={args.lr}")
     log_print(f"{'='*60}\n")
@@ -448,6 +514,10 @@ def main():
             grad_clip=args.grad_clip, log_interval=args.log_interval,
             grad_accum_steps=args.grad_accum_steps,
             seq_loss_gamma=args.seq_loss_gamma,
+            total_epochs=args.epochs,
+            curriculum_start=args.curriculum_start,
+            curriculum_end=args.curriculum_end,
+            curriculum_warmup=args.curriculum_warmup,
         )
 
         # Validate
@@ -458,8 +528,11 @@ def main():
             scheduler.step()
 
         # Logging
+        # Compute current curriculum noise level for display
+        cur_progress = min(1.0, (epoch - 1) / max(1, args.epochs * args.curriculum_warmup))
+        cur_noise = args.curriculum_start + (args.curriculum_end - args.curriculum_start) * cur_progress
         log_print(
-            f"Epoch [{epoch}/{args.epochs}] (lr={optimizer.param_groups[0]['lr']:.2e})"
+            f"Epoch [{epoch}/{args.epochs}] (lr={optimizer.param_groups[0]['lr']:.2e}, noise={cur_noise:.3f})"
         )
         log_print(
             f"  Train → Loss: {train_metrics['train_loss']:.4f}  "
