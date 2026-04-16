@@ -452,7 +452,7 @@ def main():
         context_dim=ckpt_args.get("context_dim", 64),
         depth_dim=ckpt_args.get("depth_dim", 32),
         corr_levels=ckpt_args.get("corr_levels", 4),
-        corr_radius=ckpt_args.get("corr_radius", 4),
+        corr_radius=ckpt_args.get("corr_radius", 2),
         num_iterations=ckpt_args.get("num_iterations", 12),
         num_pose_samples=ckpt_args.get("num_pose_samples", 16),
         pose_sample_std=ckpt_args.get("pose_sample_std", 0.01),

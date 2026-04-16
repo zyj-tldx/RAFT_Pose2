@@ -213,8 +213,13 @@ class CorrBlock(nn.Module):
         """
         Sample correlation volume per pose sample and compute confidence scores.
 
-        Unlike __call__ which concatenates all samples into one tensor, this returns
-        individual features and confidence scores for each sample.
+        OPTIMIZED: The gather index corr_idx = h * W_feat + w depends only on spatial
+        position, NOT on the pose sample index n. This means all N pose samples query
+        the SAME correlation slices. By gathering once per pyramid level and sharing
+        the result across N grid_sample calls, we reduce peak memory from
+        (B*N*H*W, 1, h2, w2) to (B*H*W, 1, h2, w2) — an N× reduction.
+
+        For N=8 at 480×640 input: 703 MB → 88 MB per pyramid level.
 
         Out-of-bounds projected coordinates are masked to zero (ignored) instead of
         being clamped to boundary values, avoiding noisy features from invalid regions.
@@ -233,74 +238,96 @@ class CorrBlock(nn.Module):
         corr0 = self.corr_pyramid[0]
         B_q, C_q, H_feat, W_feat = corr0.shape
 
-        coords_flat = coords.permute(0, 1, 3, 4, 2).reshape(B * N, H, W, 2)
+        # --- Pre-compute shared indices (identical for all N samples) ---
+        # For query pixel (h, w), the correlation slice index is h * W_feat + w
+        # This does NOT depend on which pose sample we're evaluating
+        h_idx = torch.arange(H, device=coords.device).view(1, H, 1).expand(B, H, W)
+        w_idx = torch.arange(W, device=coords.device).view(1, 1, W).expand(B, H, W)
+        h_idx = torch.clamp(h_idx, 0, H_feat - 1)
+        w_idx = torch.clamp(w_idx, 0, W_feat - 1)
+        corr_idx = (h_idx * W_feat + w_idx).reshape(B * H * W)  # (B*H*W,) — NOT (B*N*H*W,)
+        b_idx = torch.arange(B, device=coords.device).unsqueeze(1).expand(B, H * W).reshape(B * H * W)
 
-        # Validity mask: True where projected coords are within feature map bounds
-        # coords_flat: (B*N, H, W, 2) -> u is [...,0], v is [...,1]
-        valid_mask = (
-            (coords_flat[..., 0] >= 0) & (coords_flat[..., 0] <= W_feat - 1) &
-            (coords_flat[..., 1] >= 0) & (coords_flat[..., 1] <= H_feat - 1)
-        )  # (B*N, H, W)
+        # Pre-compute local grid delta (shared across all levels and samples)
+        dx = torch.linspace(-r, r, 2 * r + 1, dtype=corr0.dtype, device=coords.device)
+        dy = torch.linspace(-r, r, 2 * r + 1, dtype=corr0.dtype, device=coords.device)
+        delta_grid = torch.stack(torch.meshgrid(dy, dx, indexing="ij"), axis=-1)  # (2r+1, 2r+1, 2)
 
-        out_pyramid = []
-        # Also collect center correlation (confidence) from level 0
+        # Pre-compute per-sample coordinates and validity masks
+        coords_per_sample = []
+        valid_masks = []
+        for n in range(N):
+            coords_n = coords[:, n].permute(0, 2, 3, 1)  # (B, H, W, 2)
+            coords_per_sample.append(coords_n)
+            valid_mask = (
+                (coords_n[..., 0] >= 0) & (coords_n[..., 0] <= W_feat - 1) &
+                (coords_n[..., 1] >= 0) & (coords_n[..., 1] <= H_feat - 1)
+            )  # (B, H, W)
+            valid_masks.append(valid_mask)
+
+        # --- Per-level: gather ONCE, grid_sample for each sample ---
+        # sample_out_pyramids[n] = list of per-level tensors (B, H, W, (2r+1)^2)
+        sample_out_pyramids = [[] for _ in range(N)]
+
         for i in range(self.num_levels):
             corr = self.corr_pyramid[i]
             h2_i, w2_i = corr.shape[-2], corr.shape[-1]
             scale = 2 ** i
 
             # Skip pyramid levels that are too small for the sampling window
-            # grid_sample on very small feature maps (e.g. 1x2) with align_corners
-            # produces NaN in gradients. Minimum size: 2*r+1 in each dimension.
             min_size = 2 * r + 1
             if h2_i < min_size or w2_i < min_size:
-                # Fill with zeros for this level
-                out_pyramid.append(torch.zeros(B * N, H, W, (2 * r + 1) ** 2,
-                                                dtype=corr.dtype, device=coords.device))
+                for n in range(N):
+                    sample_out_pyramids[n].append(
+                        torch.zeros(B, H, W, (2 * r + 1) ** 2,
+                                    dtype=corr.dtype, device=coords.device)
+                    )
                 continue
 
-            dx = torch.linspace(-r, r, 2 * r + 1, dtype=corr.dtype, device=coords.device)
-            dy = torch.linspace(-r, r, 2 * r + 1, dtype=corr.dtype, device=coords.device)
-            delta = torch.stack(torch.meshgrid(dy, dx, indexing="ij"), axis=-1)
-
-            centroid = coords_flat / scale
-            centroid = centroid.unsqueeze(3).unsqueeze(3)
-            delta = delta.view(1, 1, 1, 2 * r + 1, 2 * r + 1, 2)
-            sampling_coords = centroid + delta
-            sampling_coords = sampling_coords.reshape(B * N * H * W, 2 * r + 1, 2 * r + 1, 2)
-
+            # === GATHER ONCE — the key optimization ===
+            # (B*H*W, 1, h2_i, w2_i) instead of (B*N*H*W, 1, h2_i, w2_i)
+            # For N=8: 88 MB instead of 703 MB!
             corr_5d = corr.view(B, H_feat * W_feat, 1, h2_i, w2_i)
+            corr_gathered = corr_5d[b_idx, corr_idx]  # (B*H*W, 1, h2_i, w2_i)
 
-            h_idx = torch.arange(H, device=coords.device).view(1, H, 1).expand(B * N, H, W)
-            w_idx = torch.arange(W, device=coords.device).view(1, 1, W).expand(B * N, H, W)
-            h_idx = torch.clamp(h_idx, 0, H_feat - 1)
-            w_idx = torch.clamp(w_idx, 0, W_feat - 1)
-            corr_idx = (h_idx * W_feat + w_idx).reshape(B * N * H * W)
+            # === Grid sample for each pose sample (sharing corr_gathered) ===
+            delta = delta_grid.view(1, 1, 1, 2 * r + 1, 2 * r + 1, 2)
 
-            b_idx = torch.arange(B, device=coords.device).view(B, 1).expand(B, N * H * W).reshape(B * N * H * W)
-            corr_sampled = corr_5d[b_idx, corr_idx]
+            for n in range(N):
+                centroid = coords_per_sample[n] / scale  # (B, H, W, 2)
+                centroid = centroid.unsqueeze(3).unsqueeze(3)  # (B, H, W, 1, 1, 2)
+                sampling_coords = centroid + delta  # (B, H, W, 2r+1, 2r+1, 2)
+                sampling_coords = sampling_coords.reshape(B * H * W, 2 * r + 1, 2 * r + 1, 2)
 
-            corr_sampled = CorrBlock.bilinear_sampler(corr_sampled, sampling_coords)
-            corr_sampled = corr_sampled.squeeze(1)
-            corr_sampled = corr_sampled.view(B * N, H, W, -1)
-            out_pyramid.append(corr_sampled)
+                corr_local = CorrBlock.bilinear_sampler(corr_gathered, sampling_coords)
+                corr_local = corr_local.squeeze(1).view(B, H, W, -1)  # (B, H, W, (2r+1)^2)
+                sample_out_pyramids[n].append(corr_local)
 
-        # Concatenate all pyramid levels
-        out = torch.cat(out_pyramid, dim=-1)  # (B*N, H, W, C_corr)
-        corr_feats = out.permute(0, 3, 1, 2).contiguous()  # (B*N, C_corr, H, W)
+        # --- Assemble per-sample outputs ---
+        sample_corr_feats = []
+        sample_confidence = []
 
-        # Zero out invalid (out-of-bounds) pixels
-        # valid_mask: (B*N, H, W) -> (B*N, 1, H, W) broadcast over C_corr
-        corr_feats = corr_feats * valid_mask.unsqueeze(1).float()
+        for n in range(N):
+            # Concatenate pyramid levels: (B, H, W, C_corr)
+            out = torch.cat(sample_out_pyramids[n], dim=-1)
 
-        # Compute confidence: mean correlation response at level 0 (finest)
-        # Only over valid pixels to avoid bias from out-of-bounds regions
-        center_val = out_pyramid[0][:, :, :, r * (2 * r + 1) + r]  # (B*N, H, W)
-        center_val = center_val * valid_mask.float()  # mask invalid pixels
+            # Mask invalid (out-of-bounds) pixels
+            out = out * valid_masks[n].unsqueeze(-1).float()
 
-        valid_count = valid_mask.sum(dim=[1, 2]).float().clamp(min=1.0)  # (B*N,)
-        confidence = center_val.sum(dim=[1, 2]) / valid_count  # (B*N,)
-        confidence = confidence.view(B, N)  # (B, N)
+            # (B, C_corr, H, W)
+            corr_feat_n = out.permute(0, 3, 1, 2).contiguous()
+            sample_corr_feats.append(corr_feat_n)
+
+            # Confidence: mean correlation at level-0 center, over valid pixels only
+            center_val = sample_out_pyramids[n][0][:, :, :, r * (2 * r + 1) + r]  # (B, H, W)
+            center_val = center_val * valid_masks[n].float()
+            valid_count = valid_masks[n].sum(dim=[1, 2]).float().clamp(min=1.0)  # (B,)
+            conf_n = center_val.sum(dim=[1, 2]) / valid_count  # (B,)
+            sample_confidence.append(conf_n)
+
+        # Stack: (B, N, C_corr, H, W) -> (B*N, C_corr, H, W)
+        corr_feats = torch.stack(sample_corr_feats, dim=1).reshape(B * N, -1, H, W)
+        confidence = torch.stack(sample_confidence, dim=1)  # (B, N)
 
         return corr_feats, confidence
 

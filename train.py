@@ -299,7 +299,7 @@ def parse_args():
     parser.add_argument("--context_dim", type=int, default=64)
     parser.add_argument("--depth_dim", type=int, default=32)
     parser.add_argument("--corr_levels", type=int, default=4)
-    parser.add_argument("--corr_radius", type=int, default=4)
+    parser.add_argument("--corr_radius", type=int, default=2)
     parser.add_argument("--num_iterations", type=int, default=12)
     parser.add_argument("--num_pose_samples", type=int, default=16)
     parser.add_argument("--pose_sample_std", type=float, default=0.01)
