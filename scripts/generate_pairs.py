@@ -24,18 +24,21 @@ Definition JSON format (input):
             "scene": "chess",
             "seq": "seq-01",
             "frame_range": [0, 79],
+            "stride_range": [1, 10],
             "split": "train"
         },
         {
             "scene": "chess",
             "seq": "seq-02",
             "frame_range": [0, 39],
+            "stride_range": [1, 5],
             "split": "train"
         },
         {
             "scene": "chess",
             "seq": "seq-02",
             "frame_range": [40, 79],
+            "stride_range": [1, 10],
             "split": "val"
         }
     ]
@@ -44,6 +47,7 @@ Definition JSON format (input):
 Supported strategies:
   - "random_offset": randomly sample frame pairs with offset in [min_offset, max_offset]
   - "all_pairs":     exhaustive C(n,2) pairing within each group
+  - "stride_pairs":  generate pairs for all strides in [min_stride, max_stride] per group
 
 Output dataset JSON format (unchanged):
 {
@@ -116,11 +120,36 @@ def pairs_all_pairs(frames):
     return list(combinations(frames, 2))
 
 
+def pairs_stride(frames, min_stride, max_stride):
+    """
+    Generate pairs for all strides within the range [min_stride, max_stride].
+    For each stride k, pair frame i with i+k if both exist in frames.
+    Avoid duplicates by ensuring i < j.
+
+    Args:
+        frames: list of frame indices (int)
+        min_stride: minimum stride
+        max_stride: maximum stride
+
+    Returns:
+        list of (frame_i, frame_j) tuples
+    """
+    frame_set = set(frames)
+    pairs = set()
+    for k in range(min_stride, max_stride + 1):
+        for i in frames:
+            j = i + k
+            if j in frame_set and i < j:
+                pairs.add((i, j))
+    return list(pairs)
+
+
 # ─── Main ─────────────────────────────────────────────────────────────────────
 
 STRATEGIES = {
     "random_offset": pairs_random_offset,
     "all_pairs": pairs_all_pairs,
+    "stride_pairs": pairs_stride,
 }
 
 
@@ -199,13 +228,14 @@ def main():
         scene = group["scene"]
         seq = group["seq"]
         frame_start, frame_end = group["frame_range"]
+        stride_range = group.get("stride_range", [1, 10])
         split = group.get("split", "train")
 
         # Generate frame index list
         frames = list(range(frame_start, frame_end + 1))
         print(f"  Group {gi}: scene={scene}, seq={seq}, "
               f"frames=[{frame_start}, {frame_end}] ({len(frames)} frames), "
-              f"split={split}")
+              f"stride_range={stride_range}, split={split}")
 
         # Generate pairs
         if strategy_name == "random_offset":
@@ -217,6 +247,13 @@ def main():
                 min_offset=min_off,
                 max_offset=max_off,
                 samples_per_group=spg
+            )
+        elif strategy_name == "stride_pairs":
+            min_stride, max_stride = group.get("stride_range", [1, 10])
+            raw_pairs = strategy_fn(
+                frames,
+                min_stride=min_stride,
+                max_stride=max_stride
             )
         elif strategy_name == "all_pairs":
             raw_pairs = strategy_fn(frames)
