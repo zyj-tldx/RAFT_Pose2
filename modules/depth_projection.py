@@ -71,8 +71,21 @@ class DepthProjector(nn.Module):
         cx_rgb = intrinsic_rgb[:, 0, 2].view(B, 1, 1, 1)
         cy_rgb = intrinsic_rgb[:, 1, 2].view(B, 1, 1, 1)
         
-        u_proj = fx_rgb * (P_C[:, :, 0] / (P_C[:, :, 2] + 1e-8)) + cx_rgb  # (B, N, H, W)
-        v_proj = fy_rgb * (P_C[:, :, 1] / (P_C[:, :, 2] + 1e-8)) + cy_rgb  # (B, N, H, W)
+        # Depth validity check: only project points with positive depth
+        # after transformation (Z_C > 0 means in front of camera).
+        # Without this, depth=0 or Z_C≈0 causes NaN via division by zero,
+        # which clamp() cannot fix (clamp(NaN) = NaN).
+        Z_C = P_C[:, :, 2]  # (B, N, H, W)
+        valid_depth = (Z_C > 0.01).float()  # (B, N, H, W)
+        
+        # Safe division: clamp prevents NaN/Inf for positive but tiny depths
+        u_proj = fx_rgb * (P_C[:, :, 0] / Z_C.clamp(min=0.01)) + cx_rgb  # (B, N, H, W)
+        v_proj = fy_rgb * (P_C[:, :, 1] / Z_C.clamp(min=0.01)) + cy_rgb  # (B, N, H, W)
+        
+        # Push invalid coordinates far out-of-bounds so downstream
+        # valid_mask in CorrBlock naturally filters them out
+        u_proj = u_proj * valid_depth + (-1e4) * (1 - valid_depth)
+        v_proj = v_proj * valid_depth + (-1e4) * (1 - valid_depth)
         
         # Stack into (B, N, 2, H, W)
         projected_coords = torch.stack([u_proj, v_proj], dim=2)
