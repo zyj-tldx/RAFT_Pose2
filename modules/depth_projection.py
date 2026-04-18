@@ -353,8 +353,19 @@ class CorrBlock(nn.Module):
 
             center_val = sample_out_pyramids[n][0][:, :, :, r * (2 * r + 1) + r]
             center_val = center_val * valid_masks[n].float()
-            valid_count = valid_masks[n].sum(dim=[1, 2]).float().clamp(min=1.0)
-            conf_n = center_val.sum(dim=[1, 2]) / valid_count
+
+            # ── Top-K mean confidence (instead of global mean) ──
+            center_val_flat = center_val.view(B, -1)  # (B, H*W)
+            valid_flat = valid_masks[n].view(B, -1).float()  # (B, H*W)
+            k = max(1, int(0.2 * H * W))
+            n_valid = valid_flat.sum(dim=1, keepdim=True).clamp(min=1)
+            k = min(k, int(n_valid.min().item()))
+
+            center_val_masked = center_val_flat.clone()
+            center_val_masked[valid_flat < 0.5] = float('-inf')
+            topk_vals = center_val_masked.topk(k, dim=1).values
+            finite_mask = topk_vals.isfinite()
+            conf_n = (topk_vals * finite_mask.float()).sum(dim=1) / finite_mask.sum(dim=1).clamp(min=1)
             sample_confidence.append(conf_n)
 
         corr_feats = torch.stack(sample_corr_feats, dim=1).reshape(B * N, -1, H, W)
@@ -456,15 +467,32 @@ class CorrBlock(nn.Module):
                         (coords_n[..., 1] >= 0) & (coords_n[..., 1] <= H_feat - 1)
                     )
                     center_val = center_val * valid_mask.float()
-                    valid_count = valid_mask.sum(dim=[1, 2]).float().clamp(min=1.0)
 
-                    all_center_vals.append(center_val.sum(dim=[1, 2]))  # (B,)
-                    all_valid_counts.append(valid_count)  # (B,)
+                    # ── Top-K mean confidence (instead of global mean) ──
+                    # Global mean dilutes signal: ~50% flat regions contribute noise.
+                    # Top-K mean uses only the highest-correlation spatial positions,
+                    # which are typically edges/corners with discriminative features.
+                    # This dramatically improves signal-to-noise ratio.
+                    center_val_flat = center_val.view(B, -1)  # (B, H*W)
+                    valid_flat = valid_mask.view(B, -1).float()  # (B, H*W)
+                    n_valid = valid_flat.sum(dim=1, keepdim=True).clamp(min=1)  # (B, 1)
+                    k = max(1, int(0.2 * H * W))  # top 20% of spatial positions
+                    k = min(k, int(n_valid.min().item()))  # don't exceed valid count
+
+                    # Set invalid positions to -inf so they're never selected
+                    center_val_masked = center_val_flat.clone()
+                    center_val_masked[valid_flat < 0.5] = float('-inf')
+                    topk_vals = center_val_masked.topk(k, dim=1).values  # (B, k)
+                    # Only average over finite (valid) values
+                    finite_mask = topk_vals.isfinite()
+                    topk_sum = (topk_vals * finite_mask.float()).sum(dim=1)  # (B,)
+                    topk_count = finite_mask.sum(dim=1).clamp(min=1)  # (B,)
+                    conf_n = topk_sum / topk_count  # (B,)
+
+                    all_center_vals.append(conf_n)
 
                 # Stack: (B, N)
-                center_sums = torch.stack(all_center_vals, dim=1)
-                valid_counts = torch.stack(all_valid_counts, dim=1)
-                confidence = center_sums / valid_counts  # (B, N)
+                confidence = torch.stack(all_center_vals, dim=1)  # (B, N)
             else:
                 confidence = torch.zeros(B, N, device=coords.device)
 
