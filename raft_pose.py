@@ -191,11 +191,15 @@ class RAFTPose(nn.Module):
         """
         Initialize 4D correlation volume between RGB and depth features.
         
+        The correlation volume is indexed as corr[depth_pos, rgb_pos], so that
+        for each depth pixel (h,w), sampling at projected coord (u,v) gives
+        cos_sim(depth[h,w], rgb[v,u]). This requires fmap1=depth, fmap2=rgb.
+        
         Args:
             fmap_rgb: RGB features of shape (B, C, H, W)
             fmap_depth: Depth features of shape (B, C, H, W)
         """
-        self.corr_block = CorrBlock(fmap_rgb, fmap_depth, 
+        self.corr_block = CorrBlock(fmap_depth, fmap_rgb, 
                                      num_levels=self.corr_levels, 
                                      radius=self.corr_radius)
     

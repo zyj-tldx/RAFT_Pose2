@@ -475,19 +475,25 @@ class CorrBlock(nn.Module):
                     # This dramatically improves signal-to-noise ratio.
                     center_val_flat = center_val.view(B, -1)  # (B, H*W)
                     valid_flat = valid_mask.view(B, -1).float()  # (B, H*W)
-                    n_valid = valid_flat.sum(dim=1, keepdim=True).clamp(min=1)  # (B, 1)
+                    n_valid = valid_flat.sum(dim=1)  # (B,)
+
+                    # Guard: if no valid pixels exist, confidence = 0
+                    # (avoids -inf * 0.0 = NaN from topk on all-invalid data)
+                    has_valid = (n_valid > 0).float()  # (B,)
+                    n_valid_safe = n_valid.clamp(min=1)  # (B,) for k computation
+
                     k = max(1, int(0.2 * H * W))  # top 20% of spatial positions
-                    k = min(k, int(n_valid.min().item()))  # don't exceed valid count
+                    k = min(k, int(n_valid_safe.min().item()))  # don't exceed valid count
 
                     # Set invalid positions to -inf so they're never selected
                     center_val_masked = center_val_flat.clone()
                     center_val_masked[valid_flat < 0.5] = float('-inf')
                     topk_vals = center_val_masked.topk(k, dim=1).values  # (B, k)
-                    # Only average over finite (valid) values
-                    finite_mask = topk_vals.isfinite()
-                    topk_sum = (topk_vals * finite_mask.float()).sum(dim=1)  # (B,)
-                    topk_count = finite_mask.sum(dim=1).clamp(min=1)  # (B,)
-                    conf_n = topk_sum / topk_count  # (B,)
+                    # Replace -inf with 0 before summing to avoid NaN
+                    topk_vals_safe = topk_vals.clamp(min=0.0)
+                    topk_sum = topk_vals_safe.sum(dim=1)  # (B,)
+                    topk_count = n_valid_safe  # (B,)
+                    conf_n = (topk_sum / topk_count) * has_valid  # (B,) zero when no valid pixels
 
                     all_center_vals.append(conf_n)
 
