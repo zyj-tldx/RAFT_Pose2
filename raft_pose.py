@@ -5,6 +5,7 @@ RAFT-Pose: Pose estimation using optical flow architecture with multi-pose sampl
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.utils.checkpoint import checkpoint as torch_checkpoint
 
 # Import from modules subdirectory — support both package and direct execution
 try:
@@ -93,6 +94,7 @@ class RAFTPose(nn.Module):
         self.init_pose_noise_std = init_pose_noise_std
         self.top_k = min(top_k, self.num_pose_samples)  # top_k cannot exceed num_pose_samples
         self.downsample_factor = 8  # Total stride of image encoder (3 layers × stride 2)
+        self.use_checkpoint = use_checkpoint
         self.use_amp = use_amp
         self.coarse_to_fine = coarse_to_fine
         
@@ -386,6 +388,132 @@ class RAFTPose(nn.Module):
 
         return result[..., 1:]  # return vector part only
     
+    def _single_iteration(self, current_pose, hidden_state, depth, intrinsic_depth,
+                           intrinsic_rgb, context_feat):
+        """
+        Single iteration of pose refinement — designed to be gradient-checkpointable.
+
+        Contains all heavy computation: depth projection, correlation sampling,
+        feature aggregation, ConvGRU update, and pose delta prediction.
+
+        When wrapped with torch.utils.checkpoint, intermediate activations are
+        discarded after forward and recomputed during backward, reducing autograd
+        memory from O(num_iterations) to O(1).
+
+        Args:
+            current_pose: Current pose estimate (B, 7)
+            hidden_state: ConvGRU hidden state (B, hidden_dim, H, W), or None
+            depth: Depth map (B, 1, H_orig, W_orig)
+            intrinsic_depth: Depth camera intrinsic (B, 3, 3)
+            intrinsic_rgb: RGB camera intrinsic (B, 3, 3)
+            context_feat: Context features from encoder (B, context_dim, H, W)
+
+        Returns:
+            current_pose: Updated pose estimate (B, 7)
+            hidden_state: Updated ConvGRU hidden state (B, hidden_dim, H, W)
+            rot_vec: Raw rotation vector prediction (B, 3)
+            dt: Translation delta prediction (B, 3)
+        """
+        batch_size = current_pose.shape[0]
+        device = current_pose.device
+
+        # Generate directional pose samples
+        sample_result = self.generate_directional_samples(
+            current_pose, depth, intrinsic_depth, intrinsic_rgb,
+            base_step_rot=self.pose_sample_std,
+            base_step_trans=self.pose_sample_std
+        )
+        pose_samples, confidence, corr_feats, dir_vecs, topk_indices = sample_result
+
+        # Select best sample by confidence score
+        best_idx = confidence.argmax(dim=1)  # (B,)
+        N_size = pose_samples.shape[1]
+
+        # Gather correlation features and aggregate top-K by confidence
+        feat_h, feat_w = context_feat.shape[2], context_feat.shape[3]
+        if corr_feats.shape[2:] != (feat_h, feat_w):
+            corr_feats = F.interpolate(
+                corr_feats, size=(feat_h, feat_w),
+                mode='bilinear', align_corners=False
+            )
+
+        if self.coarse_to_fine and topk_indices is not None:
+            # ── Coarse-to-fine mode ──────────────────────────────
+            K = topk_indices.shape[1]
+            all_corr = corr_feats.view(batch_size, K, -1, feat_h, feat_w)  # (B, K, C_corr, H, W)
+
+            topk_conf = confidence.gather(1, topk_indices)  # (B, K)
+            topk_weights = F.softmax(topk_conf, dim=1)  # (B, K)
+
+            if K > 1:
+                weighted_feats = (all_corr * topk_weights.unsqueeze(2).unsqueeze(3).unsqueeze(4)).sum(dim=1)
+                aggregated_corr = weighted_feats  # (B, C_corr, H, W)
+
+                topk_dirs = dir_vecs.gather(1, topk_indices.unsqueeze(2).expand(-1, -1, 6))  # (B, K, 6)
+                direction_encoding = (topk_dirs * topk_weights.unsqueeze(2)).sum(dim=1)  # (B, 6)
+            else:
+                aggregated_corr = all_corr[:, 0]  # (B, C_corr, H, W)
+                direction_encoding = dir_vecs.gather(1, topk_indices.unsqueeze(2).expand(-1, -1, 6))[:, 0]  # (B, 6)
+        else:
+            # ── Original mode: all N samples have full features ──
+            all_corr = corr_feats.view(batch_size, N_size, -1, feat_h, feat_w)  # (B, N, C_corr, H, W)
+
+            if self.top_k > 1 and N_size > 1:
+                K = min(self.top_k, N_size)
+                sorted_indices = confidence.argsort(dim=1, descending=True)  # (B, N)
+                topk_idx_orig = sorted_indices[:, :K]  # (B, K)
+
+                topk_feats = all_corr.gather(
+                    1, topk_idx_orig.unsqueeze(2).unsqueeze(3).unsqueeze(4)
+                    .expand(-1, -1, all_corr.shape[2], feat_h, feat_w)
+                )  # (B, K, C_corr, H, W)
+
+                topk_conf = confidence.gather(1, topk_idx_orig)  # (B, K)
+                topk_weights = F.softmax(topk_conf, dim=1)  # (B, K)
+
+                weighted_feats = (topk_feats * topk_weights.unsqueeze(2).unsqueeze(3).unsqueeze(4)).sum(dim=1)
+                aggregated_corr = weighted_feats  # (B, C_corr, H, W)
+
+                topk_dirs = dir_vecs.gather(1, topk_idx_orig.unsqueeze(2).expand(-1, -1, 6))  # (B, K, 6)
+                direction_encoding = (topk_dirs * topk_weights.unsqueeze(2)).sum(dim=1)  # (B, 6)
+            else:
+                aggregated_corr = all_corr[torch.arange(batch_size, device=device), best_idx]  # (B, C_corr, H, W)
+                direction_encoding = dir_vecs[torch.arange(batch_size, device=device), best_idx]  # (B, 6)
+
+        # Predict pose delta using aggregated correlation features + direction encoding
+        pose_delta, hidden_state = self.pose_update_net(
+            aggregated_corr,
+            context_feat,
+            hidden_state,
+            direction_encoding=direction_encoding
+        )  # pose_delta: (B, 6, H, W)
+
+        # Aggregate pose delta predictions (spatial pooling)
+        pose_delta_avg = pose_delta.mean(dim=[2, 3])  # (B, 6)
+
+        # Convert rotation vector (rx, ry, rz) to quaternion delta
+        rot_vec = pose_delta_avg[:, :3]  # (B, 3)
+        dt = pose_delta_avg[:, 3:6]      # (B, 3)
+
+        # Rodrigues' formula: rotation vector → quaternion (fully differentiable)
+        angle = rot_vec.norm(dim=1, keepdim=True).clamp(min=1e-8)  # (B, 1)
+        scale = (angle.clamp(max=0.5) / angle).detach()  # (B, 1)
+        rot_vec_scaled = rot_vec * scale  # (B, 3)
+
+        half_angle = rot_vec_scaled.norm(dim=1, keepdim=True).clamp(min=1e-8) / 2.0  # (B, 1)
+        cos_ha = torch.cos(half_angle)  # (B, 1)
+        sinc_factor = torch.sin(half_angle) / half_angle  # (B, 1)
+        dq = torch.cat([cos_ha, sinc_factor * rot_vec_scaled / 2.0], dim=1)  # (B, 4)
+        dq = F.normalize(dq, dim=1)
+
+        # Update pose estimate: T_new = T_cur * Delta
+        q_cur, t_cur = current_pose[:, :4], current_pose[:, 4:7]
+        q_new, t_new = apply_pose_update((q_cur, t_cur), (dq, dt))
+        q_new = F.normalize(q_new, dim=1)
+        current_pose = torch.cat([q_new, t_new], dim=1)  # (B, 7)
+
+        return current_pose, hidden_state, rot_vec, dt
+
     def forward(
         self, 
         image, 
@@ -455,141 +583,26 @@ class RAFTPose(nn.Module):
             rot_vec_sequence = []
             dt_sequence = []
         
-        # Fixed step size: let the model learn step sizing via ConvGRU + sequence loss
-        # ConvGRU hidden state implicitly encodes iteration-awareness, and the
-        # regression head directly predicts pose deltas whose magnitude the
-        # network learns to control. No heuristic step adjustment needed.
-        fixed_step = self.pose_sample_std
-        
-        # Iterative pose refinement
+        # Iterative pose refinement (with gradient checkpointing)
         for it in range(self.num_iterations):
-            # Generate directional pose samples with FIXED step size
-            sample_result = self.generate_directional_samples(
-                current_pose, depth, intrinsic_depth, intrinsic_rgb,
-                base_step_rot=fixed_step,
-                base_step_trans=fixed_step
-            )
-            pose_samples, confidence, corr_feats, dir_vecs, topk_indices = sample_result
-            # pose_samples: (B, N, 4, 4), confidence: (B, N)
-            # dir_vecs: (B, N, 6) — direction encoding per sample
-            # If coarse_to_fine: corr_feats is (B*K, C_corr, H, W), topk_indices is (B, K)
-            # Else:              corr_feats is (B*N, C_corr, H, W), topk_indices is None
-
-            # Select best sample by confidence score
-            best_idx = confidence.argmax(dim=1)  # (B,)
-            N_size = pose_samples.shape[1]
-
-            # Gather correlation features and aggregate top-K by confidence
-            feat_h, feat_w = context_feat.shape[2], context_feat.shape[3]
-            if corr_feats.shape[2:] != (feat_h, feat_w):
-                corr_feats = F.interpolate(
-                    corr_feats, size=(feat_h, feat_w),
-                    mode='bilinear', align_corners=False
+            if self.use_checkpoint:
+                current_pose, hidden_state, rot_vec, dt = torch_checkpoint(
+                    self._single_iteration,
+                    current_pose, hidden_state, depth, intrinsic_depth, intrinsic_rgb,
+                    context_feat,
+                    use_reentrant=False
+                )
+            else:
+                current_pose, hidden_state, rot_vec, dt = self._single_iteration(
+                    current_pose, hidden_state, depth, intrinsic_depth, intrinsic_rgb,
+                    context_feat
                 )
 
-            if self.coarse_to_fine and topk_indices is not None:
-                # ── Coarse-to-fine mode ──────────────────────────────
-                # corr_feats already contains only top-K samples: (B*K, C_corr, H, W)
-                # topk_indices tells us which of the N samples were selected: (B, K)
-                K = topk_indices.shape[1]
-                all_corr = corr_feats.view(batch_size, K, -1, feat_h, feat_w)  # (B, K, C_corr, H, W)
-
-                # Get top-K confidence scores for the selected indices
-                topk_conf = confidence.gather(1, topk_indices)  # (B, K)
-                topk_weights = F.softmax(topk_conf, dim=1)  # (B, K)
-
-                if K > 1:
-                    # Weighted average: (B, K, C_corr, H, W) * (B, K, 1, 1, 1) -> sum
-                    weighted_feats = (all_corr * topk_weights.unsqueeze(2).unsqueeze(3).unsqueeze(4)).sum(dim=1)
-                    aggregated_corr = weighted_feats  # (B, C_corr, H, W)
-
-                    # Weighted average of direction vectors
-                    topk_dirs = dir_vecs.gather(1, topk_indices.unsqueeze(2).expand(-1, -1, 6))  # (B, K, 6)
-                    direction_encoding = (topk_dirs * topk_weights.unsqueeze(2)).sum(dim=1)  # (B, 6)
-                else:
-                    aggregated_corr = all_corr[:, 0]  # (B, C_corr, H, W)
-                    direction_encoding = dir_vecs.gather(1, topk_indices.unsqueeze(2).expand(-1, -1, 6))[:, 0]  # (B, 6)
-            else:
-                # ── Original mode: all N samples have full features ──
-                all_corr = corr_feats.view(batch_size, N_size, -1, feat_h, feat_w)  # (B, N, C_corr, H, W)
-
-                if self.top_k > 1 and N_size > 1:
-                    # Top-K aggregation: weighted average of top-K confidence samples
-                    K = min(self.top_k, N_size)
-                    # Sort by confidence (descending)
-                    sorted_indices = confidence.argsort(dim=1, descending=True)  # (B, N)
-                    topk_idx_orig = sorted_indices[:, :K]  # (B, K)
-
-                    # Gather top-K features: (B, K, C_corr, H, W)
-                    topk_feats = all_corr.gather(
-                        1, topk_idx_orig.unsqueeze(2).unsqueeze(3).unsqueeze(4)
-                        .expand(-1, -1, all_corr.shape[2], feat_h, feat_w)
-                    )  # (B, K, C_corr, H, W)
-
-                    # Gather top-K confidence scores and softmax for weights
-                    topk_conf = confidence.gather(1, topk_idx_orig)  # (B, K)
-                    topk_weights = F.softmax(topk_conf, dim=1)  # (B, K)
-
-                    # Weighted average: (B, K, C_corr, H, W) * (B, K, 1, 1, 1) -> sum -> (B, C_corr, H, W)
-                    weighted_feats = (topk_feats * topk_weights.unsqueeze(2).unsqueeze(3).unsqueeze(4)).sum(dim=1)
-                    aggregated_corr = weighted_feats  # (B, C_corr, H, W)
-
-                    # Weighted average of direction vectors: (B, K, 6) * (B, K, 1) -> sum -> (B, 6)
-                    topk_dirs = dir_vecs.gather(1, topk_idx_orig.unsqueeze(2).expand(-1, -1, 6))  # (B, K, 6)
-                    direction_encoding = (topk_dirs * topk_weights.unsqueeze(2)).sum(dim=1)  # (B, 6)
-                else:
-                    # K=1: select best sample only (original behavior)
-                    aggregated_corr = all_corr[torch.arange(batch_size, device=device), best_idx]  # (B, C_corr, H, W)
-                    direction_encoding = dir_vecs[torch.arange(batch_size, device=device), best_idx]  # (B, 6)
-
-            # Predict pose delta using aggregated correlation features + direction encoding
-            # Output is 6D: [rx, ry, rz, tx, ty, tz] (rotation vector + translation)
-            pose_delta, hidden_state = self.pose_update_net(
-                aggregated_corr,
-                context_feat,
-                hidden_state,
-                direction_encoding=direction_encoding
-            )  # pose_delta: (B, 6, H, W)
-            
-            # Aggregate pose delta predictions (spatial pooling)
-            pose_delta_avg = pose_delta.mean(dim=[2, 3])  # (B, 6)
-            
-            # Convert rotation vector (rx, ry, rz) to quaternion delta
-            # rotation vector = axis * angle, so ||r|| = angle
-            rot_vec = pose_delta_avg[:, :3]  # (B, 3)
-            dt = pose_delta_avg[:, 3:6]      # (B, 3)
-            
-            # Rodrigues' formula: rotation vector → quaternion (fully differentiable)
-            # dq = [cos(θ/2), sin(θ/2)/θ * r]
-            # When θ→0: sinc(θ/2) = sin(θ/2)/(θ/2) → 1, so dq → [1, r/2]
-            #
-            # IMPORTANT: Do NOT pre-normalize rot_vec (rot_vec / angle * angle_clamped)
-            # because that creates 0/0 when rot_vec=0, killing the gradient entirely.
-            # Instead, keep raw rot_vec and let sinc handle the small-angle limit.
-            # For large angles, clamp via element-wise scaling to preserve gradient.
-            angle = rot_vec.norm(dim=1, keepdim=True).clamp(min=1e-8)  # (B, 1)
-            scale = (angle.clamp(max=0.5) / angle).detach()  # (B, 1), detach to stop grad through clamp
-            # When angle < 0.5: scale=1 (no change). When angle >= 0.5: scale < 1 (reduce magnitude)
-            # detach() ensures gradient flows through rot_vec, not through the scaling path
-            rot_vec_scaled = rot_vec * scale  # (B, 3), differentiable w.r.t. rot_vec
-            
-            half_angle = rot_vec_scaled.norm(dim=1, keepdim=True).clamp(min=1e-8) / 2.0  # (B, 1)
-            cos_ha = torch.cos(half_angle)  # (B, 1)
-            sinc_factor = torch.sin(half_angle) / half_angle  # (B, 1), →1 as half_angle→0
-            dq = torch.cat([cos_ha, sinc_factor * rot_vec_scaled / 2.0], dim=1)  # (B, 4)
-            dq = F.normalize(dq, dim=1)
-            
-            # Track deltas BEFORE applying update (these are the raw predictions)
+            # Track deltas (lightweight, outside checkpoint)
             if return_all_deltas:
-                rot_vec_sequence.append(rot_vec.clone())  # (B, 3) raw rotation vector
-                dt_sequence.append(dt.clone())  # (B, 3) raw translation delta
-            
-            # Update pose estimate: T_new = T_cur * Delta
-            q_cur, t_cur = current_pose[:, :4], current_pose[:, 4:7]
-            q_new, t_new = apply_pose_update((q_cur, t_cur), (dq, dt))
-            q_new = F.normalize(q_new, dim=1)
-            current_pose = torch.cat([q_new, t_new], dim=1)  # (B, 7)
-            
+                rot_vec_sequence.append(rot_vec.clone())
+                dt_sequence.append(dt.clone())
+
             # Track pose
             if return_all_poses:
                 pose_sequence.append(current_pose.clone())
