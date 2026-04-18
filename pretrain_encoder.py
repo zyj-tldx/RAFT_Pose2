@@ -39,6 +39,64 @@ from raft_pose import RAFTPose
 from dataloader import SevenScenesDataset
 
 
+# ─── Data Augmentation ─────────────────────────────────────────────────────
+
+class PretrainAugmentor:
+    """
+    Data augmentation for encoder pretraining.
+    
+    Applies photometric and geometric augmentations to RGB and depth images
+    to improve generalization on small datasets (435 train samples).
+    """
+    def __init__(self, prob=0.5):
+        self.prob = prob
+    
+    def __call__(self, image, depth):
+        """
+        Args:
+            image: (3, H, W) float32 RGB in [0, 1]
+            depth: (1, H, W) float32 depth in meters
+        
+        Returns:
+            augmented (image, depth)
+        """
+        # ── Photometric augmentations ──
+        # Brightness jitter
+        if torch.rand(1).item() < self.prob:
+            brightness = 0.7 + 0.6 * torch.rand(1).item()  # [0.7, 1.3]
+            image = (image * brightness).clamp(0.0, 1.0)
+        
+        # Contrast jitter
+        if torch.rand(1).item() < self.prob:
+            mean = image.mean(dim=[1, 2], keepdim=True)
+            contrast = 0.7 + 0.6 * torch.rand(1).item()  # [0.7, 1.3]
+            image = ((image - mean) * contrast + mean).clamp(0.0, 1.0)
+        
+        # Saturation jitter (convert to grayscale and blend)
+        if torch.rand(1).item() < self.prob:
+            gray = image.mean(dim=0, keepdim=True).expand_as(image)
+            blend = 0.5 + 0.5 * torch.rand(1).item()  # [0.5, 1.0]
+            image = gray * (1 - blend) + image * blend
+        
+        # Gaussian noise
+        if torch.rand(1).item() < 0.3:
+            noise = torch.randn_like(image) * 0.02
+            image = (image + noise).clamp(0.0, 1.0)
+        
+        # ── Depth augmentations ──
+        # Depth noise (simulates sensor noise)
+        if torch.rand(1).item() < self.prob:
+            depth_noise = torch.randn_like(depth) * 0.02  # ±2cm noise
+            depth = (depth + depth_noise).clamp(min=0.0)
+        
+        # Random depth scaling (simulates scale uncertainty)
+        if torch.rand(1).item() < 0.3:
+            scale = 0.98 + 0.04 * torch.rand(1).item()  # [0.98, 1.02]
+            depth = depth * scale
+        
+        return image, depth
+
+
 # ─── Utilities ────────────────────────────────────────────────────────────────
 
 class AverageMeter:
@@ -80,44 +138,69 @@ def get_next_run_dir(base_dir="checkpoints", prefix="pre"):
 
 # ─── Projection at GT Pose ───────────────────────────────────────────────────
 
-def project_depth_to_rgb(depth, gt_pose_7d, intrinsic_depth, intrinsic_rgb):
+def project_depth_to_rgb(depth, gt_pose_7d, intrinsic_depth, intrinsic_rgb,
+                         downsample=8):
     """
     Project depth map to RGB image plane using GT pose (7D: quat + trans).
+    
+    Projects at FEATURE MAP resolution (H/downsample × W/downsample) to match
+    the encoder output resolution. This is consistent with how correlation
+    sampling works during inference, avoiding resolution mismatch.
     
     Args:
         depth: (B, 1, H, W) depth map in meters
         gt_pose_7d: (B, 7) [qw, qx, qy, qz, tx, ty, tz] relative pose
         intrinsic_depth: (B, 3, 3)
         intrinsic_rgb: (B, 3, 3)
+        downsample: spatial downsampling factor (default 8, matching encoder stride)
     
     Returns:
-        projected_coords: (B, 2, H, W) — (u, v) in RGB image plane
-        valid_mask: (B, 1, H, W) — 1 where depth > 0 and projection is in-bounds
+        projected_coords: (B, 2, H_feat, W_feat) — (u, v) in RGB feature map space
+        valid_mask: (B, 1, H_feat, W_feat) — 1 where depth > 0 and projection is in-bounds
     """
     B, _, H, W = depth.shape
     device = depth.device
-    depth_squeezed = depth.squeeze(1)  # (B, H, W)
+    
+    # Downsample depth to feature map resolution (nearest to preserve depth values)
+    feat_h, feat_w = H // downsample, W // downsample
+    depth_small = F.interpolate(
+        depth, size=(feat_h, feat_w), mode='nearest'
+    ).squeeze(1)  # (B, feat_h, feat_w)
+    
+    # Scale intrinsics to feature map resolution
+    scale = 1.0 / downsample
+    intrinsic_depth_s = intrinsic_depth.clone()
+    intrinsic_depth_s[:, 0, 0] *= scale
+    intrinsic_depth_s[:, 1, 1] *= scale
+    intrinsic_depth_s[:, 0, 2] *= scale
+    intrinsic_depth_s[:, 1, 2] *= scale
+    
+    intrinsic_rgb_s = intrinsic_rgb.clone()
+    intrinsic_rgb_s[:, 0, 0] *= scale
+    intrinsic_rgb_s[:, 1, 1] *= scale
+    intrinsic_rgb_s[:, 0, 2] *= scale
+    intrinsic_rgb_s[:, 1, 2] *= scale
+    
+    # Pixel coordinates at feature map resolution
+    u_d = torch.arange(feat_w, dtype=torch.float32, device=device).view(1, 1, feat_w).expand(B, feat_h, feat_w)
+    v_d = torch.arange(feat_h, dtype=torch.float32, device=device).view(1, feat_h, 1).expand(B, feat_h, feat_w)
 
-    # Pixel coordinates
-    u_d = torch.arange(W, dtype=torch.float32, device=device).view(1, 1, W).expand(B, H, W)
-    v_d = torch.arange(H, dtype=torch.float32, device=device).view(1, H, 1).expand(B, H, W)
+    # Unproject using scaled depth intrinsic
+    fx_d = intrinsic_depth_s[:, 0, 0].view(B, 1, 1)
+    fy_d = intrinsic_depth_s[:, 1, 1].view(B, 1, 1)
+    cx_d = intrinsic_depth_s[:, 0, 2].view(B, 1, 1)
+    cy_d = intrinsic_depth_s[:, 1, 2].view(B, 1, 1)
 
-    # Unproject using depth intrinsic
-    fx_d = intrinsic_depth[:, 0, 0].view(B, 1, 1)
-    fy_d = intrinsic_depth[:, 1, 1].view(B, 1, 1)
-    cx_d = intrinsic_depth[:, 0, 2].view(B, 1, 1)
-    cy_d = intrinsic_depth[:, 1, 2].view(B, 1, 1)
-
-    x_d = (u_d - cx_d) / fx_d * depth_squeezed
-    y_d = (v_d - cy_d) / fy_d * depth_squeezed
-    z_d = depth_squeezed
+    x_d = (u_d - cx_d) / fx_d * depth_small
+    y_d = (v_d - cy_d) / fy_d * depth_small
+    z_d = depth_small
 
     # Valid depth mask
-    valid_depth = (depth_squeezed > 0.01).float()
+    valid_depth = (depth_small > 0.01).float()
 
     # 3D points in depth camera frame (homogeneous)
     ones = torch.ones_like(z_d)
-    P_D = torch.stack([x_d, y_d, z_d, ones], dim=1)  # (B, 4, H, W)
+    P_D = torch.stack([x_d, y_d, z_d, ones], dim=1)  # (B, 4, feat_h, feat_w)
 
     # Convert 7D pose to 4x4 matrix
     qw, qx, qy, qz = gt_pose_7d[:, 0], gt_pose_7d[:, 1], gt_pose_7d[:, 2], gt_pose_7d[:, 3]
@@ -144,30 +227,29 @@ def project_depth_to_rgb(depth, gt_pose_7d, intrinsic_depth, intrinsic_rgb):
     T[:, 3, 3] = 1.0
 
     # Transform: P_C = T @ P_D
-    P_D_flat = P_D.view(B, 4, -1)  # (B, 4, H*W)
-    P_C_flat = torch.bmm(T, P_D_flat)  # (B, 4, H*W)
-    P_C = P_C_flat.view(B, 4, H, W)
+    P_D_flat = P_D.view(B, 4, -1)  # (B, 4, feat_h*feat_w)
+    P_C_flat = torch.bmm(T, P_D_flat)  # (B, 4, feat_h*feat_w)
+    P_C = P_C_flat.view(B, 4, feat_h, feat_w)
 
-    # Project to RGB image plane
-    fx_rgb = intrinsic_rgb[:, 0, 0].view(B, 1, 1)
-    fy_rgb = intrinsic_rgb[:, 1, 1].view(B, 1, 1)
-    cx_rgb = intrinsic_rgb[:, 0, 2].view(B, 1, 1)
-    cy_rgb = intrinsic_rgb[:, 1, 2].view(B, 1, 1)
+    # Project to RGB image plane (at feature map resolution)
+    fx_rgb = intrinsic_rgb_s[:, 0, 0].view(B, 1, 1)
+    fy_rgb = intrinsic_rgb_s[:, 1, 1].view(B, 1, 1)
+    cx_rgb = intrinsic_rgb_s[:, 0, 2].view(B, 1, 1)
+    cy_rgb = intrinsic_rgb_s[:, 1, 2].view(B, 1, 1)
 
-    z_cam = P_C[:, 2].clamp(min=1e-6)
-    u_proj = fx_rgb * (P_C[:, 0] / z_cam) + cx_rgb  # (B, H, W)
+    z_cam = P_C[:, 2].clamp(min=0.01)
+    u_proj = fx_rgb * (P_C[:, 0] / z_cam) + cx_rgb  # (B, feat_h, feat_w)
     v_proj = fy_rgb * (P_C[:, 1] / z_cam) + cy_rgb
 
-    projected_coords = torch.stack([u_proj, v_proj], dim=1)  # (B, 2, H, W)
+    projected_coords = torch.stack([u_proj, v_proj], dim=1)  # (B, 2, feat_h, feat_w)
 
     # Valid mask: depth > 0 and projection within bounds
-    H_rgb, W_rgb = H, W  # Same resolution (both resized in dataloader)
     in_bounds = (
-        (u_proj >= 0) & (u_proj < W_rgb - 1) &
-        (v_proj >= 0) & (v_proj < H_rgb - 1) &
+        (u_proj >= 0) & (u_proj < feat_w - 1) &
+        (v_proj >= 0) & (v_proj < feat_h - 1) &
         (z_cam > 0)
     ).float()
-    valid_mask = (valid_depth * in_bounds).unsqueeze(1)  # (B, 1, H, W)
+    valid_mask = (valid_depth * in_bounds).unsqueeze(1)  # (B, 1, feat_h, feat_w)
 
     return projected_coords, valid_mask
 
@@ -194,21 +276,17 @@ class InfoNCELoss(nn.Module):
         Args:
             fmap_rgb: (B, C, H_feat, W_feat) — encoder output
             fmap_depth: (B, C, H_feat, W_feat) — encoder output
-            projected_coords: (B, 2, H_orig, W_orig) — projected coords in original image space
-            valid_mask: (B, 1, H_orig, W_orig) — valid projection mask
+            projected_coords: (B, 2, H_feat, W_feat) — projected coords already in feature map space
+            valid_mask: (B, 1, H_feat, W_feat) — valid projection mask in feature map space
         """
         B, C, H_feat, W_feat = fmap_rgb.shape
-        _, _, H_orig, W_orig = projected_coords.shape
         device = fmap_rgb.device
-        downsample = H_orig // H_feat  # typically 8
         
         # Normalize features
         fmap_rgb = F.normalize(fmap_rgb, dim=1)
         fmap_depth = F.normalize(fmap_depth, dim=1)
         
-        # Downsample projected coords to feature map resolution
-        projected_coords_feat = projected_coords[:, :, ::downsample, ::downsample]
-        valid_mask_feat = valid_mask[:, :, ::downsample, ::downsample]
+        # projected_coords are already in feature map space (no downsample needed)
         
         # Sample depth features at grid positions
         step = max(1, H_feat // 16)  # Sample ~16x16 = 256 positions
@@ -222,13 +300,12 @@ class InfoNCELoss(nn.Module):
         
         depth_feats = fmap_depth[:, :, grid_h_flat, grid_w_flat]  # (B, C, num_grid)
         
-        # Projected coords at grid positions (already downsampled, in original pixels)
-        # Convert to feature map coords by dividing by downsample
-        proj_u = projected_coords_feat[:, 0, grid_h_flat, grid_w_flat] / downsample
-        proj_v = projected_coords_feat[:, 1, grid_h_flat, grid_w_flat] / downsample
+        # Projected coords at grid positions (already in feature map space)
+        proj_u = projected_coords[:, 0, grid_h_flat, grid_w_flat]
+        proj_v = projected_coords[:, 1, grid_h_flat, grid_w_flat]
         
         # Valid mask at grid
-        grid_valid = valid_mask_feat[:, 0, grid_h_flat, grid_w_flat]  # (B, num_grid)
+        grid_valid = valid_mask[:, 0, grid_h_flat, grid_w_flat]  # (B, num_grid)
         
         # Normalize coords to [-1, 1] for grid_sample (in feature map space)
         proj_u_norm = 2.0 * proj_u / (W_feat - 1) - 1.0
@@ -295,107 +372,141 @@ class InfoNCELoss(nn.Module):
 
 class DenseContrastiveLoss(nn.Module):
     """
-    Dense pixel-wise contrastive loss.
+    Dense pixel-wise contrastive loss with hard negative mining.
     For each valid depth pixel, maximize cosine similarity with projected RGB pixel,
-    and minimize similarity with random other RGB pixels.
+    and minimize similarity with spatially nearby hard negatives.
     
-    More memory-efficient than full InfoNCE.
+    Hard negatives are sampled in a local window around the positive location,
+    forcing the model to learn fine-grained spatial discrimination — exactly
+    what pose refinement needs.
     """
-    def __init__(self, temperature=0.07, num_negatives=128):
+    def __init__(self, temperature=0.07, num_negatives=128, hard_radius=4,
+                 hard_ratio=0.75, random_ratio=0.25):
         super().__init__()
         self.temperature = temperature
         self.num_negatives = num_negatives
+        self.hard_radius = hard_radius  # pixels around positive for hard negatives
+        self.hard_ratio_max = hard_ratio    # max fraction of hard negatives (reached at end)
+        self.random_ratio = random_ratio  # fraction that are random (far away)
+        self._current_hard_ratio = 0.0  # start with all random (easy), ramp up
+    
+    def set_epoch(self, epoch, total_epochs):
+        """Curriculum: linearly ramp hard_ratio from 0 to hard_ratio_max over training."""
+        self._current_hard_ratio = self.hard_ratio_max * min(1.0, epoch / (total_epochs * 0.5))
     
     def forward(self, fmap_rgb, fmap_depth, projected_coords, valid_mask):
         """
-        Args:
-            fmap_rgb: (B, C, H_feat, W_feat) — encoder output (e.g. H/8 × W/8)
-            fmap_depth: (B, C, H_feat, W_feat) — encoder output
-            projected_coords: (B, 2, H_orig, W_orig) — projected coords in original image space
-            valid_mask: (B, 1, H_orig, W_orig) — valid projection mask in original image space
+        Dense contrastive loss on ALL spatial positions.
+        Negatives: mix of random (far) + hard (nearby, curriculum-scheduled).
+        Memory-efficient: random negs via matmul, hard negs via sparse fill.
         """
         B, C, H_feat, W_feat = fmap_rgb.shape
-        _, _, H_orig, W_orig = projected_coords.shape
         device = fmap_rgb.device
-        downsample = H_orig // H_feat  # typically 8
+        N = H_feat * W_feat
         
         # Normalize
         fmap_rgb = F.normalize(fmap_rgb, dim=1)
         fmap_depth = F.normalize(fmap_depth, dim=1)
         
-        # Downsample projected coords to feature map resolution
-        # Use nearest-neighbor to maintain integer alignment
-        proj_coords_feat = projected_coords[:, :, ::downsample, ::downsample]  # (B, 2, H_feat, W_feat)
-        valid_mask_feat = valid_mask[:, :, ::downsample, ::downsample]  # (B, 1, H_feat, W_feat)
+        # Projected coords in feature map space
+        proj_u = projected_coords[:, 0]  # (B, H_feat, W_feat)
+        proj_v = projected_coords[:, 1]
         
-        # Normalize coords to [-1, 1] for grid_sample (in feature map coords)
-        # projected_coords are in original image pixels, so divide by downsample first
-        proj_u_feat = proj_coords_feat[:, 0] / downsample  # (B, H_feat, W_feat)
-        proj_v_feat = proj_coords_feat[:, 1] / downsample
-        proj_u_norm = 2.0 * proj_u_feat / (W_feat - 1) - 1.0
-        proj_v_norm = 2.0 * proj_v_feat / (H_feat - 1) - 1.0
-        grid = torch.stack([proj_u_norm, proj_v_norm], dim=-1)  # (B, H_feat, W_feat, 2)
+        # Sample positive RGB features via grid_sample
+        proj_u_norm = 2.0 * proj_u / (W_feat - 1) - 1.0
+        proj_v_norm = 2.0 * proj_v / (H_feat - 1) - 1.0
+        grid = torch.stack([proj_u_norm, proj_v_norm], dim=-1)  # (B, H, W, 2)
+        rgb_pos = F.grid_sample(fmap_rgb, grid, mode='bilinear',
+                                padding_mode='zeros', align_corners=True)
         
-        # Sample positive RGB features: grid shape should be (B, H, W, 2)
-        rgb_pos = F.grid_sample(
-            fmap_rgb, grid,
-            mode='bilinear', padding_mode='zeros', align_corners=True
-        )  # (B, C, H, W)
+        # Positive similarity: (B, N)
+        pos_sim = (fmap_depth * rgb_pos).sum(dim=1).reshape(B, N) / self.temperature
         
-        # Positive similarity: (B, H, W)
-        pos_sim = (fmap_depth * rgb_pos).sum(dim=1) / self.temperature
+        # ── Negatives ──
+        n_hard = max(0, int(self.num_negatives * self._current_hard_ratio))
+        n_random = self.num_negatives - n_hard
         
-# Sample negative RGB features at random locations (in feature map space)
-        neg_idx_h = torch.randint(0, H_feat, (B, self.num_negatives), device=device)
-        neg_idx_w = torch.randint(0, W_feat, (B, self.num_negatives), device=device)
-
-        # Flatten spatial dims for gathering
-        fmap_rgb_flat = fmap_rgb.reshape(B, C, -1)  # (B, C, H_feat*W_feat)
-        neg_pixel_idx = neg_idx_h * W_feat + neg_idx_w  # (B, num_neg)
-        neg_pixel_idx_expanded = neg_pixel_idx.unsqueeze(1).expand(B, C, self.num_negatives)  # (B, C, num_neg)
-        rgb_neg = torch.gather(fmap_rgb_flat, 2, neg_pixel_idx_expanded)  # (B, C, num_neg)
-
-        # Negative similarity: fmap_depth (B, C, H_feat, W_feat) x rgb_neg (B, C, num_neg)
-        fmap_depth_flat = fmap_depth.reshape(B, C, -1)  # (B, C, H_feat*W_feat)
-        neg_sim = torch.bmm(
-            fmap_depth_flat.permute(0, 2, 1),  # (B, H_feat*W_feat, C)
-            rgb_neg  # (B, C, num_neg)
-        )  # (B, H_feat*W_feat, num_neg)
-        neg_sim = neg_sim.reshape(B, H_feat, W_feat, self.num_negatives).permute(0, 3, 1, 2)  # (B, num_neg, H_feat, W_feat)
-        neg_sim = neg_sim / self.temperature
+        fmap_rgb_flat = fmap_rgb.reshape(B, C, N)  # (B, C, N)
+        fmap_depth_flat = fmap_depth.reshape(B, C, N)  # (B, C, N)
         
-        # Log-sum-exp denominator: log(exp(pos) + sum(exp(neg)))
-        # For numerical stability
-        all_sim = torch.cat([pos_sim.unsqueeze(1), neg_sim], dim=1)  # (B, 1+num_neg, H_feat, W_feat)
+        # --- Random negatives via matmul: (B, C, N) @ (B, N, n_random) -> (B, C, n_random) ---
+        rand_idx = torch.randint(0, N, (B, n_random), device=device)
+        # One-hot gather: fmap_rgb_flat @ one_hot(rand_idx) 
+        # More efficient: just gather and do element-wise
+        rand_idx_exp = rand_idx.unsqueeze(1).expand(B, C, -1)
+        rgb_rand_neg = torch.gather(fmap_rgb_flat, 2, rand_idx_exp)  # (B, C, n_random)
+        # Similarity: (B, n_random) = sum_c depth_flat[b,c,n] * rand_neg[b,c,k] for each n,k
+        # depth_flat: (B, C, N), rand_neg: (B, C, n_random)
+        # rand_neg_sim[b, k, n] = sum_c fmap_depth_flat[b,c,n] * rgb_rand_neg[b,c,k]
+        # = (B, C, N).transpose(1,2) @ (B, C, n_random) -> (B, N, n_random) -> transpose -> (B, n_random, N)
+        rand_neg_sim = torch.bmm(fmap_depth_flat.transpose(1, 2), rgb_rand_neg)  # (B, N, n_random)
+        rand_neg_sim = rand_neg_sim.transpose(1, 2) / self.temperature  # (B, n_random, N)
         
-        # InfoNCE loss: -log(exp(pos) / (exp(pos) + sum(exp(neg))))
-        # = -pos + log(sum(exp(all)))
-        log_sum_exp = torch.logsumexp(all_sim, dim=1)  # (B, H_feat, W_feat)
-        loss_per_pixel = -pos_sim + log_sum_exp  # (B, H_feat, W_feat)
+        neg_sim_list = [rand_neg_sim]
         
-        # Apply valid mask (downsampled to feature map resolution)
-        valid_mask_feat = valid_mask[:, :, ::downsample, ::downsample]  # (B, 1, H_feat, W_feat)
-        valid_mask_squeezed = valid_mask_feat.squeeze(1)  # (B, H_feat, W_feat)
-        loss = (loss_per_pixel * valid_mask_squeezed).sum() / valid_mask_squeezed.sum().clamp(min=1)
+        # --- Hard negatives (curriculum-scheduled) ---
+        if n_hard > 0:
+            # Sample a subset of spatial positions for hard neg computation
+            step = max(1, H_feat // 16)
+            grid_h = torch.arange(0, H_feat, step, device=device)
+            grid_w = torch.arange(0, W_feat, step, device=device)
+            gh, gw = torch.meshgrid(grid_h, grid_w, indexing='ij')
+            grid_h_flat = gh.reshape(-1)
+            grid_w_flat = gw.reshape(-1)
+            n_pos = grid_h_flat.numel()
+            
+            pos_u = proj_u[:, grid_h_flat, grid_w_flat].clamp(0, W_feat - 1).long()
+            pos_v = proj_v[:, grid_h_flat, grid_w_flat].clamp(0, H_feat - 1).long()
+            
+            hard_off_u = torch.randint(-self.hard_radius, self.hard_radius + 1,
+                                       (B, n_hard, n_pos), device=device)
+            hard_off_v = torch.randint(-self.hard_radius, self.hard_radius + 1,
+                                       (B, n_hard, n_pos), device=device)
+            is_zero = (hard_off_u == 0) & (hard_off_v == 0)
+            hard_off_u[is_zero] = 1
+            
+            hard_u = (pos_u.unsqueeze(1) + hard_off_u).clamp(0, W_feat - 1)
+            hard_v = (pos_v.unsqueeze(1) + hard_off_v).clamp(0, H_feat - 1)
+            hard_idx = hard_v * W_feat + hard_u  # (B, n_hard, n_pos)
+            
+            batch_idx = torch.arange(B, device=device).view(B, 1, 1).expand(B, n_hard, n_pos)
+            # (B, n_hard, n_pos, C) -> (B, C, n_hard, n_pos)
+            rgb_hard = fmap_rgb_flat[batch_idx, :, hard_idx].permute(0, 3, 1, 2)
+            
+            # Depth features at sampled positions: (B, C, n_pos)
+            depth_sampled = fmap_depth_flat[:, :, grid_h_flat * W_feat + grid_w_flat]
+            
+            # Hard neg similarity at sampled positions: (B, n_hard, n_pos)
+            hard_neg_sim = (depth_sampled.unsqueeze(2) * rgb_hard).sum(dim=1) / self.temperature
+            
+            # For unsampled positions, hard neg sim = -inf (they don't contribute)
+            hard_neg_sim_dense = torch.full((B, n_hard, N), float('-inf'), device=device)
+            hard_neg_sim_dense[:, :, grid_h_flat * W_feat + grid_w_flat] = hard_neg_sim
+            neg_sim_list.append(hard_neg_sim_dense)
         
-        # Accuracy (top-1): how often positive has highest similarity
+        # Combine: (B, num_neg, N)
+        neg_sim = torch.cat(neg_sim_list, dim=1)
+        
+        # InfoNCE loss
+        all_sim = torch.cat([pos_sim.unsqueeze(1), neg_sim], dim=1)  # (B, 1+num_neg, N)
+        log_sum_exp = torch.logsumexp(all_sim, dim=1)  # (B, N)
+        loss_per_pixel = -pos_sim + log_sum_exp  # (B, N)
+        
+        valid_mask_flat = valid_mask.reshape(B, N)
+        loss = (loss_per_pixel * valid_mask_flat).sum() / valid_mask_flat.sum().clamp(min=1)
+        
+        # Accuracy
         with torch.no_grad():
-            max_neg_sim, _ = neg_sim.max(dim=1)  # (B, H_feat, W_feat)
-            correct = ((pos_sim > max_neg_sim) & (valid_mask_squeezed > 0.5)).float()
-            accuracy = correct.sum() / valid_mask_squeezed.sum().clamp(min=1) * 100.0
+            max_neg_sim, _ = neg_sim.max(dim=1)  # (B, N)
+            correct = ((pos_sim > max_neg_sim) & (valid_mask_flat > 0.5)).float()
+            accuracy = correct.sum() / valid_mask_flat.sum().clamp(min=1) * 100.0
         
         return loss, accuracy
 
 
-# ─── Training Loop ────────────────────────────────────────────────────────────
-
 def train_one_epoch(model, dataloader, criterion, optimizer, device, epoch,
-                    log_interval=10, grad_clip=1.0):
+                    augmentor=None, grad_clip=1.0, log_interval=10):
     model.train()
-    # Freeze pose_update_net — only train encoders + alignment
-    for name, param in model.named_parameters():
-        if 'pose_update_net' in name:
-            param.requires_grad = False
     
     loss_meter = AverageMeter("Loss")
     acc_meter = AverageMeter("Acc")
@@ -406,9 +517,13 @@ def train_one_epoch(model, dataloader, criterion, optimizer, device, epoch,
     for i, batch in enumerate(dataloader):
         image = batch["image"].to(device)
         depth = batch["depth"].to(device)
-        intrinsic_rgb = batch["intrinsic_rgb"].to(device)
-        intrinsic_depth = batch["intrinsic_depth"].to(device)
         gt_pose = batch["gt_pose"].to(device)
+        intrinsic_depth = batch["intrinsic_depth"].to(device)
+        intrinsic_rgb = batch["intrinsic_rgb"].to(device)
+        
+        # Apply data augmentation
+        if augmentor is not None:
+            image, depth = augmentor(image, depth)
         
         # Project depth at GT pose
         projected_coords, valid_mask = project_depth_to_rgb(
@@ -443,10 +558,6 @@ def train_one_epoch(model, dataloader, criterion, optimizer, device, epoch,
                 f"Acc: {acc_meter.avg:.1f}%  "
                 f"Time: {batch_time.avg:.3f}s"
             )
-    
-    # Restore requires_grad
-    for param in model.parameters():
-        param.requires_grad = True
     
     return {
         "train_loss": loss_meter.avg,
@@ -514,6 +625,10 @@ def parse_args():
                         help="InfoNCE temperature. Lower = sharper, harder negatives.")
     parser.add_argument("--num_negatives", type=int, default=128,
                         help="Number of negative samples for dense contrastive loss.")
+    parser.add_argument("--hard_radius", type=int, default=4,
+                        help="Hard negative sampling radius in pixels.")
+    parser.add_argument("--hard_ratio", type=float, default=0.75,
+                        help="Fraction of negatives that are hard (nearby).")
     parser.add_argument("--loss_type", type=str, default="dense",
                         choices=["infonce", "dense"],
                         help="InfoNCE (grid-based) or Dense (pixel-wise)")
@@ -604,8 +719,11 @@ def main():
         criterion = DenseContrastiveLoss(
             temperature=args.temperature,
             num_negatives=args.num_negatives,
+            hard_radius=args.hard_radius,
+            hard_ratio=args.hard_ratio,
         )
-        log_print(f"Using Dense Contrastive loss (temp={args.temperature}, neg={args.num_negatives})")
+        log_print(f"Using Dense Contrastive loss (temp={args.temperature}, neg={args.num_negatives}, "
+                  f"hard_radius={args.hard_radius}, hard_ratio={args.hard_ratio})")
     
     # ─── Optimizer ────────────────────────────────────────────────────────
     optimizer = torch.optim.AdamW(encoder_params, lr=args.lr, weight_decay=args.weight_decay)
@@ -630,15 +748,25 @@ def main():
         model.load_state_dict(encoder_state, strict=False)
         log_print(f"Resumed encoder weights from {args.resume}")
     
+    # ─── Augmentation ─────────────────────────────────────────────────────
+    augmentor = PretrainAugmentor(prob=0.5)
+    log_print(f"Data augmentation enabled (prob=0.5)")
+    
     # ─── Train ────────────────────────────────────────────────────────────
     log_print(f"\n{'='*60}")
     log_print(f"Pretraining: {args.epochs} epochs, batch_size={args.batch_size}, lr={args.lr}")
+    log_print(f"Hard negative curriculum: 0 → {args.hard_ratio} over first 50% of epochs")
     log_print(f"{'='*60}\n")
     
     for epoch in range(start_epoch, args.epochs + 1):
+        # Curriculum: ramp hard negative ratio
+        if hasattr(criterion, 'set_epoch'):
+            criterion.set_epoch(epoch, args.epochs)
+        
         train_metrics = train_one_epoch(
             model, train_loader, criterion, optimizer, device, epoch,
             log_interval=args.log_interval, grad_clip=args.grad_clip,
+            augmentor=augmentor,
         )
         
         val_metrics = validate(model, val_loader, criterion, device)
@@ -646,7 +774,8 @@ def main():
         if scheduler is not None:
             scheduler.step()
         
-        log_print(f"Epoch [{epoch}/{args.epochs}] (lr={optimizer.param_groups[0]['lr']:.2e})")
+        hr = criterion._current_hard_ratio if hasattr(criterion, '_current_hard_ratio') else 0
+        log_print(f"Epoch [{epoch}/{args.epochs}] (lr={optimizer.param_groups[0]['lr']:.2e}, hard_ratio={hr:.2f})")
         log_print(
             f"  Train → Loss: {train_metrics['train_loss']:.4f}  "
             f"Acc: {train_metrics['train_acc']:.1f}%"
