@@ -303,10 +303,17 @@ def quat_to_rotvec(q):
     q = q * sign
 
     sin_half = q[..., 1:].norm(dim=-1, keepdim=True).clamp(min=1e-8)
-    cos_half = q[..., :1]
+    cos_half = q[..., :1].clamp(max=1.0)  # clamp for numerical safety
     half_angle = torch.atan2(sin_half, cos_half)  # (..., 1)
     # rot_vec = axis * 2 * half_angle = (q_xyz / sin_half) * 2 * half_angle
-    sinc = torch.sin(half_angle) / half_angle  # → 1 when half_angle → 0
+    # Use Taylor expansion for sinc near zero to avoid 0/0:
+    # sinc(x) = 1 - x^2/6 + ... ≈ 1 when x < threshold
+    small_angle = (half_angle.abs() < 1e-4)
+    sinc = torch.where(
+        small_angle,
+        torch.ones_like(half_angle),  # sinc(0) = 1
+        torch.sin(half_angle) / half_angle
+    )
     rot_vec = q[..., 1:] / sin_half * half_angle * sinc
     return rot_vec
 

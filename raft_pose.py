@@ -499,6 +499,10 @@ class RAFTPose(nn.Module):
         rot_vec = pose_delta_avg[:, :3]  # (B, 3)
         dt = pose_delta_avg[:, 3:6]      # (B, 3)
 
+        # Clamp magnitudes to prevent divergence across iterations
+        rot_vec = rot_vec.clamp(-1.0, 1.0)
+        dt = dt.clamp(-1.0, 1.0)
+
         # Rodrigues' formula: rotation vector → quaternion (fully differentiable)
         angle = rot_vec.norm(dim=1, keepdim=True).clamp(min=1e-8)  # (B, 1)
         scale = (angle.clamp(max=0.5) / angle).detach()  # (B, 1)
@@ -506,7 +510,13 @@ class RAFTPose(nn.Module):
 
         half_angle = rot_vec_scaled.norm(dim=1, keepdim=True).clamp(min=1e-8) / 2.0  # (B, 1)
         cos_ha = torch.cos(half_angle)  # (B, 1)
-        sinc_factor = torch.sin(half_angle) / half_angle  # (B, 1)
+        # Use Taylor expansion for sinc near zero to avoid 0/0
+        small_ha = (half_angle.abs() < 1e-4)
+        sinc_factor = torch.where(
+            small_ha,
+            torch.ones_like(half_angle),
+            torch.sin(half_angle) / half_angle
+        )  # (B, 1), →1 as half_angle→0
         dq = torch.cat([cos_ha, sinc_factor * rot_vec_scaled / 2.0], dim=1)  # (B, 4)
         dq = F.normalize(dq, dim=1)
 
@@ -514,6 +524,9 @@ class RAFTPose(nn.Module):
         q_cur, t_cur = current_pose[:, :4], current_pose[:, 4:7]
         q_new, t_new = apply_pose_update((q_cur, t_cur), (dq, dt))
         q_new = F.normalize(q_new, dim=1)
+        # Guard against degenerate quaternion (F.normalize on zero vector → NaN)
+        q_norm = q_new.norm(dim=1, keepdim=True).clamp(min=1e-8)
+        q_new = q_new / q_norm
         current_pose = torch.cat([q_new, t_new], dim=1)  # (B, 7)
 
         return current_pose, hidden_state, rot_vec, dt

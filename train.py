@@ -256,6 +256,14 @@ def train_one_epoch(model, dataloader, criterion, optimizer, device, epoch,
             )
             loss = loss + delta_loss_weight * delta_loss
 
+        # NaN / Inf guard: skip batch if loss is degenerate
+        if not torch.isfinite(loss):
+            if (i + 1) % log_interval == 0:
+                print(f"  Epoch [{epoch}] Step [{i+1}/{len(dataloader)}]  ⚠ NaN/Inf loss, skipping batch")
+            optimizer.zero_grad()
+            end = time.time()
+            continue
+
         # Scale loss for gradient accumulation
         loss = loss / grad_accum_steps
 
@@ -266,8 +274,19 @@ def train_one_epoch(model, dataloader, criterion, optimizer, device, epoch,
         if (i + 1) % grad_accum_steps == 0 or (i + 1) == len(dataloader):
             if grad_clip > 0:
                 nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
-            optimizer.step()
-            optimizer.zero_grad()
+            # Check for NaN in gradients before stepping
+            has_nan_grad = False
+            for p in model.parameters():
+                if p.grad is not None and not torch.isfinite(p.grad).all():
+                    has_nan_grad = True
+                    break
+            if has_nan_grad:
+                if (i + 1) % log_interval == 0:
+                    print(f"  Epoch [{epoch}] Step [{i+1}/{len(dataloader)}]  ⚠ NaN in gradients, skipping optimizer step")
+                optimizer.zero_grad()
+            else:
+                optimizer.step()
+                optimizer.zero_grad()
 
         # Update meters
         loss_meter.update(details["total_loss"], image.size(0))
