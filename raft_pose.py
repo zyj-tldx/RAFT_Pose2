@@ -90,7 +90,45 @@ class RAFTPose(nn.Module):
         self.corr_radius = corr_radius
         self.num_iterations = num_iterations
         self.num_pose_samples = 36  # Fixed: 12 directions × 3 magnitude scales
+        self.num_pose_samples_actual = 37  # 36 + 1 identity
         self.pose_sample_std = pose_sample_std
+
+        # ── Precompute pose sample templates (Optimization 1) ──────────
+        # These are constant across all iterations, so compute once.
+        base_directions = [
+            ([0, 0, 0], [1, 0, 0]),   # +Tx
+            ([0, 0, 0], [-1, 0, 0]),  # -Tx
+            ([0, 0, 0], [0, 1, 0]),   # +Ty
+            ([0, 0, 0], [0, -1, 0]),  # -Ty
+            ([0, 0, 0], [0, 0, 1]),   # +Tz
+            ([0, 0, 0], [0, 0, -1]),  # -Tz
+            ([1, 0, 0], [0, 0, 0]),   # +Rx
+            ([-1, 0, 0], [0, 0, 0]),  # -Rx
+            ([0, 1, 0], [0, 0, 0]),   # +Ry
+            ([0, -1, 0], [0, 0, 0]),  # -Ry
+            ([0, 0, 1], [0, 0, 0]),   # +Rz
+            ([0, 0, -1], [0, 0, 0]),  # -Rz
+        ]
+        scales = [0.25, 1.0, 4.0]
+
+        rot_axes_list, trans_dirs_list, scale_list = [], [], []
+        for rot_dir, trans_dir in base_directions:
+            for s in scales:
+                rot_axes_list.append(rot_dir)
+                trans_dirs_list.append(trans_dir)
+                scale_list.append(s)
+
+        rot_axes = torch.tensor(rot_axes_list, dtype=torch.float32)  # (36, 3)
+        trans_dirs = torch.tensor(trans_dirs_list, dtype=torch.float32)  # (36, 3)
+        sample_scales = torch.tensor(scale_list, dtype=torch.float32)  # (36,)
+
+        # Direction encoding vectors (unscaled)
+        dir_vecs_raw = torch.cat([rot_axes, trans_dirs], dim=1)  # (36, 6)
+
+        self.register_buffer('_precomputed_dir_vecs_raw', dir_vecs_raw)  # (36, 6)
+        self.register_buffer('_precomputed_sample_scales', sample_scales)  # (36,)
+        self.register_buffer('_precomputed_rot_axes', rot_axes)  # (36, 3)
+        self.register_buffer('_precomputed_trans_dirs', trans_dirs)  # (36, 3)
         self.init_pose_noise_std = init_pose_noise_std
         self.top_k = min(top_k, self.num_pose_samples)  # top_k cannot exceed num_pose_samples
         self.downsample_factor = 8  # Total stride of image encoder (3 layers × stride 2)
@@ -199,137 +237,69 @@ class RAFTPose(nn.Module):
 
         Sampling strategy: 12 directions × 3 magnitude scales = 36 samples + 1 identity.
 
-        The 12 base directions cover full 6-DOF:
-          ±Rx, ±Ry, ±Rz, ±Tx, ±Ty, ±Tz
-        Each direction is sampled at 3 magnitude scales:
-          scale 1: base_step × 0.5  (fine)
-          scale 2: base_step × 1.0  (medium)
-          scale 3: base_step × 2.0  (coarse)
-        This provides both local refinement and large-range exploration.
-
-        An identity (zero perturbation) sample is appended so the model
-        can learn to "stay put" when the pose is already good.
-
-        Args:
-            current_pose: Current pose estimate of shape (B, 7)
-            depth: Depth map of shape (B, 1, H, W)
-            intrinsic_depth: Depth camera intrinsic, shape (B, 3, 3)
-            intrinsic_rgb: RGB camera intrinsic, shape (B, 3, 3)
-            base_step_rot: Base rotation step in radians
-            base_step_trans: Base translation step in meters
-
-        Returns:
-            pose_samples: Pose matrices of shape (B, N, 4, 4)
-            confidence: Confidence scores of shape (B, N)
-            corr_feats: Correlation features of shape (B*N, C_corr, H_feat, W_feat)
-            direction_vecs: Direction encoding of shape (B, N, 6)
-                           Each row is [rot_axis_x, rot_axis_y, rot_axis_z,
-                                        trans_dir_x, trans_dir_y, trans_dir_z]
+        OPTIMIZED: Pose sample templates (rot_axes, trans_dirs, dir_vecs) are
+        precomputed in __init__ as persistent buffers. This method only computes
+        the scale-dependent dq/dt at each call, avoiding ~100 tensor allocations
+        per iteration. Expected saving: ~8ms/iter (from 26ms → ~18ms).
         """
         B = current_pose.shape[0]
         device = current_pose.device
 
         q_cur, t_cur = current_pose[:, :4], current_pose[:, 4:7]
 
-        # ── 36-sample mode: 12 directions × 3 magnitudes ──────────
-        # 12 base directions: full 6-DOF ±
-        base_directions = [
-            ([0, 0, 0], [1, 0, 0]),   # +Tx
-            ([0, 0, 0], [-1, 0, 0]),  # -Tx
-            ([0, 0, 0], [0, 1, 0]),   # +Ty
-            ([0, 0, 0], [0, -1, 0]),  # -Ty
-            ([0, 0, 0], [0, 0, 1]),   # +Tz
-            ([0, 0, 0], [0, 0, -1]),  # -Tz
-            ([1, 0, 0], [0, 0, 0]),   # +Rx
-            ([-1, 0, 0], [0, 0, 0]),  # -Rx
-            ([0, 1, 0], [0, 0, 0]),   # +Ry
-            ([0, -1, 0], [0, 0, 0]),  # -Ry
-            ([0, 0, 1], [0, 0, 0]),   # +Rz
-            ([0, 0, -1], [0, 0, 0]),  # -Rz
-        ]
-        # 3 magnitude scales: fine / medium / coarse
-        scales = [0.25, 1.0, 4.0]
+        # ── Use precomputed templates ─────────────────────────────
+        sample_scales = self._precomputed_sample_scales  # (36,)
+        rot_axes = self._precomputed_rot_axes              # (36, 3)
+        trans_dirs = self._precomputed_trans_dirs           # (36, 3)
+        dir_vecs_base = self._precomputed_dir_vecs_raw      # (36, 6)
 
-        # Build per-sample (rot_axis, trans_dir, scale) tuples
-        # Order: for each direction, iterate all 3 scales
-        # [dir0_s0, dir0_s1, dir0_s2, dir1_s0, dir1_s1, dir1_s2, ...]
-        rot_axes_list = []
-        trans_dirs_list = []
-        scale_list = []
-        for rot_dir, trans_dir in base_directions:
-            for s in scales:
-                rot_axes_list.append(rot_dir)
-                trans_dirs_list.append(trans_dir)
-                scale_list.append(s)
-
-        actual_N = len(rot_axes_list)  # 36
-
-        # Build tensors: (actual_N, 3)
-        rot_axes = torch.tensor(rot_axes_list, device=device, dtype=torch.float32)
-        trans_dirs = torch.tensor(trans_dirs_list, device=device, dtype=torch.float32)
-        sample_scales = torch.tensor(scale_list, device=device, dtype=torch.float32)  # (36,)
-
-        # Normalize rotation axes (identity for zero-axes translation directions)
+        # Normalize rotation axes
         rot_norms = rot_axes.norm(dim=1, keepdim=True).clamp(min=1e-8)
         rot_axes_normed = rot_axes / rot_norms
 
-        # Per-sample rotation angles: base_step_rot * scale
-        rot_angles = base_step_rot * sample_scales  # (36,)
-        half_angles = rot_angles / 2.0  # (36,)
+        # Compute scale-dependent quaternion perturbations
+        half_angles = base_step_rot * sample_scales / 2.0
         cos_ha = torch.cos(half_angles)
         sin_ha = torch.sin(half_angles)
 
-        # Build per-sample quaternions: (36, 4)
-        all_dq = torch.zeros(actual_N, 4, device=device)
-        all_dq[:, 0] = cos_ha
-        all_dq[:, 1] = rot_axes_normed[:, 0] * sin_ha
-        all_dq[:, 2] = rot_axes_normed[:, 1] * sin_ha
-        all_dq[:, 3] = rot_axes_normed[:, 2] * sin_ha
+        all_dq = torch.stack([
+            cos_ha,
+            rot_axes_normed[:, 0] * sin_ha,
+            rot_axes_normed[:, 1] * sin_ha,
+            rot_axes_normed[:, 2] * sin_ha,
+        ], dim=-1)  # (36, 4)
 
-        # Build per-sample translations: (36, 3)
-        # scale applied to translation magnitude
+        # Scale-dependent translation perturbations
         all_dt = trans_dirs * (base_step_trans * sample_scales.unsqueeze(1))  # (36, 3)
 
-        # Direction encoding: use the original (unscaled) direction + scale info
-        # Embed scale into direction vector by multiplying
-        dir_vecs_raw = torch.cat([rot_axes, trans_dirs], dim=1)  # (36, 6)
+        # Append identity sample (index 36)
+        identity_dq = dir_vecs_base.new_tensor([[1.0, 0.0, 0.0, 0.0]])
+        identity_dt = dir_vecs_base.new_zeros(1, 3)
+        identity_dir = dir_vecs_base.new_zeros(1, 6)
 
-        # ── Append identity (zero perturbation) sample ────────────────
-        # This ensures the model can "see" the correlation at the current pose.
-        # Without it, all samples are perturbations AWAY from the current pose,
-        # so the network cannot learn to "stay put" when the pose is already good.
-        # The identity sample acts as an anchor for stable convergence.
-        identity_dq = torch.tensor([[1.0, 0.0, 0.0, 0.0]], device=device)  # quat identity
-        identity_dt = torch.zeros(1, 3, device=device)  # zero translation
-        identity_dir = torch.zeros(1, 6, device=device)  # zero direction encoding
+        all_dq = torch.cat([all_dq, identity_dq], dim=0)   # (37, 4)
+        all_dt = torch.cat([all_dt, identity_dt], dim=0)   # (37, 3)
+        dir_vecs_raw = torch.cat([dir_vecs_base, identity_dir], dim=0)  # (37, 6)
+        actual_N = all_dq.shape[0]  # 37
 
-        all_dq = torch.cat([all_dq, identity_dq], dim=0)  # (actual_N+1, 4)
-        all_dt = torch.cat([all_dt, identity_dt], dim=0)  # (actual_N+1, 3)
-        dir_vecs_raw = torch.cat([dir_vecs_raw, identity_dir], dim=0)  # (actual_N+1, 6)
-        actual_N = actual_N + 1  # now includes identity
+        # Expand for batch: (B, 37, 4) and (B, 37, 3)
+        all_dq = all_dq.unsqueeze(0).expand(B, -1, -1)
+        all_dt = all_dt.unsqueeze(0).expand(B, -1, -1)
 
-        # ── Common: apply perturbations and sample correlation ─────────
-        # Expand for batch
-        all_dq = all_dq.unsqueeze(0).expand(B, -1, -1)  # (B, actual_N, 4)
-        all_dt = all_dt.unsqueeze(0).expand(B, -1, -1)  # (B, actual_N, 3)
-
-        # Apply all perturbations at once using vectorized operations
+        # Apply perturbations using vectorized quaternion math
         q_cur_exp = q_cur.unsqueeze(1)  # (B, 1, 4)
         t_cur_exp = t_cur.unsqueeze(1)  # (B, 1, 3)
 
-        # Quaternion multiply: q_new = q_cur * dq (in camera frame)
-        sampled_quats = self._batch_quaternion_multiply(q_cur_exp, all_dq)  # (B, actual_N, 4)
+        sampled_quats = self._batch_quaternion_multiply(q_cur_exp, all_dq)
         sampled_quats = F.normalize(sampled_quats, dim=-1)
 
-        # Translation update: t_new = t_cur + q_cur @ dt
-        rotated_dt = self._batch_quaternion_apply(q_cur_exp, all_dt)  # (B, actual_N, 3)
-        sampled_trans = t_cur_exp + rotated_dt  # (B, actual_N, 3)
+        rotated_dt = self._batch_quaternion_apply(q_cur_exp, all_dt)
+        sampled_trans = t_cur_exp + rotated_dt
 
-        # Convert to matrices: (B, actual_N, 4, 4)
-        pose_list = [(sampled_quats[:, i], sampled_trans[:, i]) for i in range(actual_N)]
-        pose_samples = sampled_poses_to_matrices(pose_list)
+        # Vectorized conversion to 4×4 matrices (no Python loop)
+        pose_samples = self._vectorized_poses_to_matrices(sampled_quats, sampled_trans)
 
-        # Evaluate correlation confidence for all samples in parallel
+        # Sample correlation volume
         sample_result = self.sample_correlation_with_poses(
             pose_samples, depth, intrinsic_depth, intrinsic_rgb
         )
@@ -338,10 +308,44 @@ class RAFTPose(nn.Module):
         else:
             corr_feats, confidence, topk_indices = sample_result[0], sample_result[1], None
 
-        # Build direction encoding vectors: (B, actual_N, 6)
-        dir_vecs = dir_vecs_raw.unsqueeze(0).expand(B, -1, -1)  # (B, actual_N, 6)
+        # Direction encoding: (B, actual_N, 6)
+        dir_vecs = dir_vecs_raw.unsqueeze(0).expand(B, -1, -1)
 
         return pose_samples, confidence, corr_feats, dir_vecs, topk_indices
+
+    @staticmethod
+    def _vectorized_poses_to_matrices(quats, trans):
+        """
+        Vectorized conversion of quaternions + translations to 4×4 matrices.
+        Avoids the Python for-loop in sampled_poses_to_matrices.
+
+        Args:
+            quats: (B, N, 4) normalized quaternions
+            trans: (B, N, 3) translations
+
+        Returns:
+            matrices: (B, N, 4, 4) transformation matrices
+        """
+        w, x, y, z = quats[..., 0], quats[..., 1], quats[..., 2], quats[..., 3]
+
+        xx, yy, zz = x * x, y * y, z * z
+        xy, xz, yz = x * y, x * z, y * z
+        wx, wy, wz = w * x, w * y, w * z
+
+        T = quats.new_zeros(quats.shape[:-1] + (4, 4))
+        T[..., 0, 0] = 1 - 2 * (yy + zz)
+        T[..., 0, 1] = 2 * (xy - wz)
+        T[..., 0, 2] = 2 * (xz + wy)
+        T[..., 1, 0] = 2 * (xy + wz)
+        T[..., 1, 1] = 1 - 2 * (xx + zz)
+        T[..., 1, 2] = 2 * (yz - wx)
+        T[..., 2, 0] = 2 * (xz - wy)
+        T[..., 2, 1] = 2 * (yz + wx)
+        T[..., 2, 2] = 1 - 2 * (xx + yy)
+        T[..., :3, 3] = trans
+        T[..., 3, 3] = 1.0
+
+        return T
 
     @staticmethod
     def _batch_quaternion_multiply(q1, q2):
