@@ -124,6 +124,13 @@ def load_checkpoint(filepath, model, optimizer=None, scheduler=None):
         if missing:
             print(f"  [Compatibility] Uninitialized layers: {missing}")
     else:
+        # Filter out unexpected keys (e.g., runtime caches like corr_block._cached_*)
+        unexpected_keys = [k for k in model_state if k not in new_state]
+        if unexpected_keys:
+            print(f"  [Compatibility] Filtering {len(unexpected_keys)} unexpected keys:")
+            for k in unexpected_keys:
+                print(f"    {k}")
+            model_state = {k: v for k, v in model_state.items() if k in new_state}
         model.load_state_dict(model_state)
 
     if optimizer is not None and "optimizer_state_dict" in checkpoint:
@@ -447,6 +454,9 @@ def parse_args():
     parser.add_argument("--freeze_encoder_epochs", type=int, default=0,
                         help="Freeze encoder for first N epochs during end-to-end training. "
                              "0 = no freezing. Recommended: 2-5 epochs after pretraining.")
+    parser.add_argument("--resume_model_only", action="store_true",
+                        help="Only load model weights from checkpoint, ignore optimizer/scheduler/epoch. "
+                             "Useful when you want to change lr, epochs, or scheduler after resuming.")
 
     return parser.parse_args()
 
@@ -558,11 +568,17 @@ def main():
 
     if args.resume:
         if os.path.isfile(args.resume):
-            print(f"Resuming from checkpoint: {args.resume}")
-            ckpt = load_checkpoint(args.resume, model, optimizer, scheduler)
-            start_epoch = ckpt.get("epoch", 0) + 1
-            best_val_loss = ckpt.get("best_val_loss", float("inf"))
-            print(f"  Resumed at epoch {start_epoch}, best_val_loss={best_val_loss:.6f}")
+            if getattr(args, 'resume_model_only', False):
+                # Only load model weights, start fresh with optimizer/scheduler/epoch
+                print(f"Loading model weights from: {args.resume} (model only, no optimizer/scheduler)")
+                ckpt = load_checkpoint(args.resume, model, optimizer=None, scheduler=None)
+                log_print(f"  Model weights loaded (model-only mode, starting from epoch 1)")
+            else:
+                print(f"Resuming from checkpoint: {args.resume}")
+                ckpt = load_checkpoint(args.resume, model, optimizer, scheduler)
+                start_epoch = ckpt.get("epoch", 0) + 1
+                best_val_loss = ckpt.get("best_val_loss", float("inf"))
+                print(f"  Resumed at epoch {start_epoch}, best_val_loss={best_val_loss:.6f}")
         else:
             print(f"Warning: checkpoint not found at {args.resume}")
 
