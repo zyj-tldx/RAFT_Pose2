@@ -99,23 +99,33 @@ class CorrBlock(nn.Module):
     Computes all-pairs correlation between two feature maps.
     Uses cosine similarity (L2-normalized features) for scale-invariant matching.
     """
-    def __init__(self, fmap1, fmap2, num_levels=4, radius=4):
+    def __init__(self, fmap1, fmap2, num_levels=4, radius=4, temperature=1.0):
         """
         Args:
             fmap1: Feature map 1, shape (B, C, H, W)
             fmap2: Feature map 2, shape (B, C, H, W)
             num_levels: Number of pyramid levels for multi-scale correlation
             radius: Radius for local correlation sampling
+            temperature: Softmax temperature for correlation sharpening.
+                temperature=1.0: raw cosine similarity (default)
+                temperature<1.0: sharper peaks (more discriminative)
+                temperature>1.0: smoother landscape (less overshoot)
         """
         super(CorrBlock, self).__init__()
         self.num_levels = num_levels
         self.radius = radius
+        self.temperature = temperature
         self.corr_pyramid = []
         
         # Compute all-pairs correlation using normalized features (cosine similarity)
         # This ensures confidence is scale-invariant and decreases monotonically
         # with pose error, unlike unnormalized dot products.
         corr = CorrBlock.corr(fmap1, fmap2)
+        
+        # Apply temperature: divide logits by temperature before storing
+        # This smooths (T>1) or sharpens (T<1) the correlation landscape
+        if temperature != 1.0:
+            corr = corr / temperature
         
         batch, h1, w1, dim, h2, w2 = corr.shape
         corr = corr.reshape(batch * h1 * w1, dim, h2, w2)

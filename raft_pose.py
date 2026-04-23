@@ -14,7 +14,7 @@ try:
         compose_pose, apply_pose_update, generate_pose_samples,
         compute_pose_error, sampled_poses_to_matrices
     )
-    from .modules.pose_extractor import BasicEncoder, DepthEncoder, SmallEncoder
+    from .modules.pose_extractor import BasicEncoder, DepthEncoder, SmallEncoder, ResNet18Encoder
     from .modules.depth_projection import DepthProjector, CorrBlock, PoseCorrSampler
     from .modules.pose_update import PoseUpdateNet
 except ImportError:
@@ -23,7 +23,7 @@ except ImportError:
         compose_pose, apply_pose_update, generate_pose_samples,
         compute_pose_error, sampled_poses_to_matrices
     )
-    from modules.pose_extractor import BasicEncoder, DepthEncoder, SmallEncoder
+    from modules.pose_extractor import BasicEncoder, DepthEncoder, SmallEncoder, ResNet18Encoder
     from modules.depth_projection import DepthProjector, CorrBlock, PoseCorrSampler
     from modules.pose_update import PoseUpdateNet
 
@@ -58,7 +58,10 @@ class RAFTPose(nn.Module):
         top_k=3,
         use_checkpoint=False,
         use_amp=False,
-        coarse_to_fine=False
+        coarse_to_fine=False,
+        corr_temperature=1.0,
+        max_rot_step=0.3,
+        max_trans_step=0.3,
     ):
         """
         Args:
@@ -92,6 +95,9 @@ class RAFTPose(nn.Module):
         self.num_pose_samples = 36  # Fixed: 12 directions × 3 magnitude scales
         self.num_pose_samples_actual = 37  # 36 + 1 identity
         self.pose_sample_std = pose_sample_std
+        self.corr_temperature = corr_temperature
+        self.max_rot_step = max_rot_step
+        self.max_trans_step = max_trans_step
 
         # ── Precompute pose sample templates (Optimization 1) ──────────
         # These are constant across all iterations, so compute once.
@@ -145,6 +151,10 @@ class RAFTPose(nn.Module):
             self.image_encoder = SmallEncoder(output_dim=128, norm_fn='instance', dropout=0.1,
                                               use_checkpoint=use_checkpoint)
             self.fmap_dim = 128
+        elif image_encoder == 'resnet18':
+            self.image_encoder = ResNet18Encoder(output_dim=256, norm_fn='instance', dropout=0.1,
+                                                 pretrained=True, use_checkpoint=use_checkpoint)
+            self.fmap_dim = 256
         else:
             raise ValueError(f"Unknown image encoder: {image_encoder}")
         
@@ -201,7 +211,8 @@ class RAFTPose(nn.Module):
         """
         self.corr_block = CorrBlock(fmap_depth, fmap_rgb, 
                                      num_levels=self.corr_levels, 
-                                     radius=self.corr_radius)
+                                     radius=self.corr_radius,
+                                     temperature=self.corr_temperature)
     
     def initialize_pose(self, batch_size, device):
         """
@@ -504,12 +515,14 @@ class RAFTPose(nn.Module):
         dt = pose_delta_avg[:, 3:6]      # (B, 3)
 
         # Clamp magnitudes to prevent divergence across iterations
-        rot_vec = rot_vec.clamp(-1.0, 1.0)
-        dt = dt.clamp(-1.0, 1.0)
+        # rot_vec clamp: 0.3 rad ≈ 17° per iteration max step
+        # Lower clamp prevents overshooting, especially for discriminative encoders
+        rot_vec = rot_vec.clamp(-self.max_rot_step, self.max_rot_step)
+        dt = dt.clamp(-self.max_trans_step, self.max_trans_step)
 
         # Rodrigues' formula: rotation vector → quaternion (fully differentiable)
         angle = rot_vec.norm(dim=1, keepdim=True).clamp(min=1e-8)  # (B, 1)
-        scale = (angle.clamp(max=0.5) / angle).detach()  # (B, 1)
+        scale = (angle.clamp(max=self.max_rot_step) / angle).detach()  # (B, 1)
         rot_vec_scaled = rot_vec * scale  # (B, 3)
 
         half_angle = rot_vec_scaled.norm(dim=1, keepdim=True).clamp(min=1e-8) / 2.0  # (B, 1)

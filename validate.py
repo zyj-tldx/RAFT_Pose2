@@ -457,6 +457,9 @@ def main():
         pose_sample_std=ckpt_args.get("pose_sample_std", 0.01),
         init_pose_noise_std=ckpt_args.get("init_pose_noise_std", 0.05),
         coarse_to_fine=ckpt_args.get("coarse_to_fine", False),
+        corr_temperature=ckpt_args.get("corr_temperature", 1.0),
+        max_rot_step=ckpt_args.get("max_rot_step", 0.3),
+        max_trans_step=ckpt_args.get("max_trans_step", 0.3),
     )
     model.load_state_dict(checkpoint["model_state_dict"])
     model = model.to(device)

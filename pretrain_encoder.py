@@ -609,7 +609,9 @@ def parse_args():
     parser.add_argument("--image_size", type=int, nargs=2, default=[480, 640])
     
     # Model
-    parser.add_argument("--image_encoder", type=str, default="basic")
+    parser.add_argument("--image_encoder", type=str, default="basic",
+                        choices=["basic", "small", "resnet18"],
+                        help="Image encoder type. 'resnet18' uses ImageNet pretrained weights.")
     parser.add_argument("--depth_dim", type=int, default=32)
     
     # Training

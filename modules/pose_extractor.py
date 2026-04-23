@@ -7,6 +7,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.checkpoint import checkpoint as torch_checkpoint
+import torchvision.models as tv_models
 
 
 class ResidualBlock(nn.Module):
@@ -286,4 +287,116 @@ class DepthEncoder(nn.Module):
             out = self.dropout(out)
         
         out = self.conv2(out)
+        return out
+
+
+class ResNet18Encoder(nn.Module):
+    """
+    ResNet-18 based encoder with ImageNet pretrained weights.
+    
+    Architecture (modified for 1/8 output stride):
+        conv1 (7x7, stride=2)  → 64ch,  H/2
+        layer1 (stride=1)      → 64ch,  H/2
+        layer2 (stride=2)      → 128ch, H/4
+        layer3 (stride=2)      → 256ch, H/8   ← output
+        layer4 (stride=1)      → 512ch, H/8   ← extra refinement (no downsample)
+        conv_out (1x1)         → output_dim
+    
+    Key differences from BasicEncoder:
+        - ImageNet pretrained (much stronger features)
+        - Gradual channel increase (64→128→256→512) instead of flat 256
+        - ~6x fewer FLOPs due to smaller early layers
+        - InstanceNorm replaces BatchNorm for robustness
+    
+    Output: (B, output_dim, H/8, W/8)
+    """
+    def __init__(self, output_dim=256, norm_fn='instance', dropout=0.0, in_feat=3,
+                 pretrained=True, use_checkpoint=False):
+        super(ResNet18Encoder, self).__init__()
+        self.use_checkpoint = use_checkpoint
+        
+        # Load pretrained ResNet-18
+        weights = tv_models.ResNet18_Weights.IMAGENET1K_V1 if pretrained else None
+        resnet = tv_models.resnet18(weights=weights)
+        
+        # Stem: conv1(stride=2) + bn + relu = stride 2
+        # NO maxpool — total stride = 2 * 1 * 2 * 2 = 8
+        self.conv1 = resnet.conv1
+        self.bn1 = resnet.bn1
+        self.relu1 = resnet.relu
+        
+        # ResNet layers (BasicBlock: 2 convs each)
+        self.layer1 = resnet.layer1  # 64ch,  stride=1
+        self.layer2 = resnet.layer2  # 128ch, stride=2
+        self.layer3 = resnet.layer3  # 256ch, stride=2  ← 1/8 resolution
+        
+        # Extra refinement: stride=1 to keep 1/8 resolution, add capacity
+        self.layer4 = self._make_no_stride_layer(256, 512, norm_fn)
+        
+        # Replace BatchNorm with InstanceNorm
+        if norm_fn == 'instance':
+            self._replace_bn_with_instance(self)
+        
+        # Output projection: 512 → output_dim
+        self.conv_out = nn.Conv2d(512, output_dim, kernel_size=1)
+        
+        if dropout > 0:
+            self.dropout = nn.Dropout2d(p=dropout)
+        else:
+            self.dropout = None
+        
+        # Init new layers (layer4, conv_out) — pretrained layers keep their weights
+        for m in self.layer4.modules():
+            if isinstance(m, nn.Conv2d):
+                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+        nn.init.kaiming_normal_(self.conv_out.weight, mode='fan_out', nonlinearity='relu')
+    
+    def _make_no_stride_layer(self, in_planes, out_planes, norm_fn='instance'):
+        """Create a ResNet BasicBlock layer with stride=1 (no spatial downsampling)."""
+        norm_layer = (lambda c: nn.InstanceNorm2d(c) if norm_fn == 'instance' else nn.BatchNorm2d(c))
+        
+        downsample = nn.Sequential(
+            nn.Conv2d(in_planes, out_planes, kernel_size=1, stride=1),
+            norm_layer(out_planes)
+        )
+        
+        block1 = tv_models.resnet.BasicBlock(in_planes, out_planes, stride=1, downsample=downsample, norm_layer=norm_layer)
+        block2 = tv_models.resnet.BasicBlock(out_planes, out_planes, stride=1, norm_layer=norm_layer)
+        
+        return nn.Sequential(block1, block2)
+    
+    def _replace_bn_with_instance(self, module):
+        """Recursively replace BatchNorm2d with InstanceNorm2d."""
+        for name, child in module.named_children():
+            if isinstance(child, nn.BatchNorm2d):
+                inorm = nn.InstanceNorm2d(child.num_features, affine=child.affine)
+                if child.affine and child.weight is not None:
+                    inorm.weight.data.copy_(child.weight.data)
+                if child.affine and child.bias is not None:
+                    inorm.bias.data.copy_(child.bias.data)
+                setattr(module, name, inorm)
+            else:
+                self._replace_bn_with_instance(child)
+    
+    def forward(self, x):
+        out = self.conv1(x)
+        out = self.bn1(out)
+        out = self.relu1(out)
+        # No maxpool — total stride = 8
+        
+        if self.use_checkpoint:
+            out = torch_checkpoint(self.layer1, out, use_reentrant=False)
+            out = torch_checkpoint(self.layer2, out, use_reentrant=False)
+            out = torch_checkpoint(self.layer3, out, use_reentrant=False)
+            out = torch_checkpoint(self.layer4, out, use_reentrant=False)
+        else:
+            out = self.layer1(out)
+            out = self.layer2(out)
+            out = self.layer3(out)
+            out = self.layer4(out)
+        
+        if self.dropout is not None:
+            out = self.dropout(out)
+        
+        out = self.conv_out(out)
         return out

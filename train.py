@@ -157,6 +157,9 @@ def build_model(args):
         use_checkpoint=getattr(args, 'use_checkpoint', False),
         use_amp=getattr(args, 'use_amp', False),
         coarse_to_fine=getattr(args, 'coarse_to_fine', False),
+        corr_temperature=getattr(args, 'corr_temperature', 1.0),
+        max_rot_step=getattr(args, 'max_rot_step', 0.3),
+        max_trans_step=getattr(args, 'max_trans_step', 0.3),
     )
     return model
 
@@ -379,7 +382,7 @@ def parse_args():
 
     # Model architecture
     parser.add_argument("--image_encoder", type=str, default="basic",
-                        choices=["basic", "small"])
+                        choices=["basic", "small", "resnet18"])
     parser.add_argument("--hidden_dim", type=int, default=128)
     parser.add_argument("--context_dim", type=int, default=64)
     parser.add_argument("--depth_dim", type=int, default=32)
@@ -444,6 +447,18 @@ def parse_args():
                         help="Use coarse-to-fine correlation sampling: evaluate all N samples on "
                              "coarsest pyramid level first, then full multi-level sampling on top-K only. "
                              "Reduces peak memory from O(B*N) to O(B*K) for fine sampling.")
+    parser.add_argument("--corr_temperature", type=float, default=1.0,
+                        help="Correlation volume temperature. 1.0=raw cosine similarity. "
+                             ">1.0=smoother landscape (recommended for ResNet18: 2.0-5.0). "
+                             "Smooths sharp correlation peaks to prevent PoseUpdateNet overshooting.")
+    parser.add_argument("--max_rot_step", type=float, default=0.3,
+                        help="Maximum rotation step per iteration in radians. "
+                             "Clamps predicted rot_vec to [-max_rot_step, max_rot_step]. "
+                             "Prevents overshooting. Default: 0.3 rad (≈17°).")
+    parser.add_argument("--max_trans_step", type=float, default=0.3,
+                        help="Maximum translation step per iteration in meters. "
+                             "Clamps predicted dt to [-max_trans_step, max_trans_step]. "
+                             "Prevents overshooting. Default: 0.3 m.")
     parser.add_argument("--delta_loss_weight", type=float, default=1.0,
                         help="Weight for delta pose supervision loss. 0 to disable. "
                              "Directly supervises the predicted (rot_vec, dt) against the true delta. "
