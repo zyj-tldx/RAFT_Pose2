@@ -160,6 +160,7 @@ def build_model(args):
         corr_temperature=getattr(args, 'corr_temperature', 1.0),
         max_rot_step=getattr(args, 'max_rot_step', 0.3),
         max_trans_step=getattr(args, 'max_trans_step', 0.3),
+        shared_encoder=getattr(args, 'shared_encoder', False),
     )
     return model
 
@@ -383,6 +384,9 @@ def parse_args():
     # Model architecture
     parser.add_argument("--image_encoder", type=str, default="basic",
                         choices=["basic", "small", "resnet18"])
+    parser.add_argument("--shared_encoder", action="store_true",
+                        help="Use same encoder for RGB and depth (Siamese). "
+                             "Depth is repeated to 3 channels. No separate depth encoder.")
     parser.add_argument("--hidden_dim", type=int, default=128)
     parser.add_argument("--context_dim", type=int, default=64)
     parser.add_argument("--depth_dim", type=int, default=32)

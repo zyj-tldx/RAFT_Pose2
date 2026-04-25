@@ -532,8 +532,12 @@ def train_one_epoch(model, dataloader, criterion, optimizer, device, epoch,
         
         # Extract features (only encoder forward pass)
         fmap_rgb = model.image_encoder(image)
-        fmap_depth_raw = model.depth_encoder(depth)
-        fmap_depth = model.depth_feat_align(fmap_depth_raw)
+        if model.shared_encoder:
+            # Dual encoder: depth has its own encoder (1-channel input)
+            fmap_depth = model.depth_encoder(depth)
+        else:
+            fmap_depth_raw = model.depth_encoder(depth)
+            fmap_depth = model.depth_feat_align(fmap_depth_raw)
         
         # Compute contrastive loss
         loss, accuracy = criterion(fmap_rgb, fmap_depth, projected_coords, valid_mask)
@@ -584,8 +588,12 @@ def validate(model, dataloader, criterion, device):
         )
         
         fmap_rgb = model.image_encoder(image)
-        fmap_depth_raw = model.depth_encoder(depth)
-        fmap_depth = model.depth_feat_align(fmap_depth_raw)
+        if model.shared_encoder:
+            # Dual encoder: depth has its own encoder (1-channel input)
+            fmap_depth = model.depth_encoder(depth)
+        else:
+            fmap_depth_raw = model.depth_encoder(depth)
+            fmap_depth = model.depth_feat_align(fmap_depth_raw)
         
         loss, accuracy = criterion(fmap_rgb, fmap_depth, projected_coords, valid_mask)
         
@@ -612,6 +620,8 @@ def parse_args():
     parser.add_argument("--image_encoder", type=str, default="basic",
                         choices=["basic", "small", "resnet18"],
                         help="Image encoder type. 'resnet18' uses ImageNet pretrained weights.")
+    parser.add_argument("--shared_encoder", action="store_true",
+                        help="Use same encoder for RGB and depth (Siamese).")
     parser.add_argument("--depth_dim", type=int, default=32)
     
     # Training
@@ -701,12 +711,18 @@ def main():
         corr_levels=4,
         corr_radius=4,
         num_iterations=6,
+        shared_encoder=getattr(args, 'shared_encoder', False),
     ).to(device)
     
     # Count encoder params
     encoder_params = []
+    encoder_keys = ['image_encoder']
+    if model.shared_encoder:
+        encoder_keys.append('depth_encoder')
+    else:
+        encoder_keys.extend(['depth_encoder', 'depth_feat_align'])
     for name, param in model.named_parameters():
-        if any(k in name for k in ['image_encoder', 'depth_encoder', 'depth_feat_align']):
+        if any(k in name for k in encoder_keys):
             encoder_params.append(param)
     
     n_encoder = sum(p.numel() for p in encoder_params)
@@ -745,8 +761,11 @@ def main():
         ckpt = torch.load(args.resume, map_location="cpu")
         # Load only encoder weights
         state = ckpt.get("model_state_dict", ckpt)
+        encoder_prefixes = ['image_encoder', 'depth_encoder']
+        if not model.shared_encoder:
+            encoder_prefixes.append('depth_feat_align')
         encoder_state = {k: v for k, v in state.items()
-                         if any(k.startswith(p) for p in ['image_encoder', 'depth_encoder', 'depth_feat_align'])}
+                         if any(k.startswith(p) for p in encoder_prefixes)}
         model.load_state_dict(encoder_state, strict=False)
         log_print(f"Resumed encoder weights from {args.resume}")
     

@@ -60,12 +60,16 @@ class RAFTPose(nn.Module):
         use_amp=False,
         coarse_to_fine=False,
         corr_temperature=1.0,
-        max_rot_step=0.3,
-        max_trans_step=0.3,
+        max_rot_step=0.1,
+        max_trans_step=0.1,
+        shared_encoder=False,
     ):
         """
         Args:
             image_encoder: Type of image feature encoder ('basic' or 'small')
+            shared_encoder: If True, use the same encoder for both RGB and depth
+                           (Siamese). Depth is repeated to 3 channels before encoding.
+                           This ensures features are in the same space without alignment.
             hidden_dim: Dimension of hidden state in ConvGRU
             context_dim: Dimension of context features from image encoder
             depth_dim: Dimension of depth features from depth encoder
@@ -98,6 +102,7 @@ class RAFTPose(nn.Module):
         self.corr_temperature = corr_temperature
         self.max_rot_step = max_rot_step
         self.max_trans_step = max_trans_step
+        self.shared_encoder = shared_encoder
 
         # ── Precompute pose sample templates (Optimization 1) ──────────
         # These are constant across all iterations, so compute once.
@@ -158,26 +163,57 @@ class RAFTPose(nn.Module):
         else:
             raise ValueError(f"Unknown image encoder: {image_encoder}")
         
-        # Depth feature encoder
-        self.depth_encoder = DepthEncoder(
-            output_dim=depth_dim,
-            fourier_levels=-1,
-            use_checkpoint=use_checkpoint
-        )
+        if shared_encoder:
+            # Dual encoder mode: two independent ResNet18 (same architecture)
+            # RGB encoder uses ImageNet pretrained weights
+            # Depth encoder uses random init (1-channel input)
+            if image_encoder == 'resnet18':
+                self.image_encoder = ResNet18Encoder(output_dim=256, norm_fn='instance', dropout=0.1,
+                                                     pretrained=True, use_checkpoint=use_checkpoint)
+                self.depth_encoder = ResNet18Encoder(output_dim=256, norm_fn='instance', dropout=0.1,
+                                                     pretrained=False, in_feat=1, use_checkpoint=use_checkpoint)
+                self.fmap_dim = 256
+            elif image_encoder == 'basic':
+                self.image_encoder = BasicEncoder(output_dim=256, norm_fn='instance', dropout=0.1,
+                                                  use_checkpoint=use_checkpoint)
+                self.depth_encoder = BasicEncoder(output_dim=256, norm_fn='instance', dropout=0.1,
+                                                  in_feat=1, use_checkpoint=use_checkpoint)
+                self.fmap_dim = 256
+            else:
+                raise ValueError(f"shared_encoder not supported for '{image_encoder}'")
+            self.depth_feat_align = None
+        else:
+            # Original mode: separate depth encoder + alignment layer
+            self.depth_encoder = DepthEncoder(
+                output_dim=depth_dim,
+                fourier_levels=-1,
+                use_checkpoint=use_checkpoint
+            )
+            # Feature alignment layer: align depth features to match RGB feature dimension
+            self.depth_feat_align = nn.Sequential(
+                nn.Conv2d(depth_dim, 64, 3, padding=1),
+                nn.InstanceNorm2d(64),
+                nn.ReLU(inplace=True),
+                nn.Conv2d(64, 128, 3, padding=1),
+                nn.InstanceNorm2d(128),
+                nn.ReLU(inplace=True),
+                nn.Conv2d(128, self.fmap_dim, 3, padding=1),
+                nn.InstanceNorm2d(self.fmap_dim),
+                nn.ReLU(inplace=True),
+            )
         
-        # Feature alignment layer: align depth features to match RGB feature dimension
-        # This ensures balanced correlation computation
-        self.depth_feat_align = nn.Sequential(
-            nn.Conv2d(depth_dim, self.fmap_dim, 1),
-            nn.InstanceNorm2d(self.fmap_dim),
-            nn.ReLU(inplace=True)
-        )
-        
-        # Context feature projector (for depth features)
-        self.context_proj = nn.Sequential(
-            nn.Conv2d(depth_dim, context_dim, 1),
-            nn.ReLU(inplace=True)
-        )
+        # Context feature projector
+        if shared_encoder:
+            # Context from depth features (same dim as fmap_dim)
+            self.context_proj = nn.Sequential(
+                nn.Conv2d(self.fmap_dim, context_dim, 1),
+                nn.ReLU(inplace=True)
+            )
+        else:
+            self.context_proj = nn.Sequential(
+                nn.Conv2d(depth_dim, context_dim, 1),
+                nn.ReLU(inplace=True)
+            )
         
         # Pose update network
         # corr_dim is now per-sample C_corr (not N*C_corr), so the network
@@ -581,19 +617,25 @@ class RAFTPose(nn.Module):
         # Extract features (use AMP for encoders if enabled)
         with torch.amp.autocast('cuda', enabled=self.use_amp):
             fmap_rgb = self.image_encoder(image)  # (B, fmap_dim, H, W)
-            fmap_depth = self.depth_encoder(depth)  # (B, depth_dim, H, W)
+            if self.shared_encoder:
+                # Dual encoder: depth has its own encoder (1-channel input)
+                fmap_depth = self.depth_encoder(depth)  # (B, fmap_dim, H, W)
+            else:
+                fmap_depth = self.depth_encoder(depth)  # (B, depth_dim, H, W)
         # Ensure float32 for correlation and downstream ops
         fmap_rgb = fmap_rgb.float()
         fmap_depth = fmap_depth.float()
         
-        # Align depth features to match RGB feature dimension for better correlation
-        fmap_depth_aligned = self.depth_feat_align(fmap_depth)  # (B, 256, H, W)
+        if self.shared_encoder:
+            # Same encoder → same feature space, no alignment needed
+            fmap_depth_aligned = fmap_depth
+        else:
+            # Align depth features to match RGB feature dimension
+            fmap_depth_aligned = self.depth_feat_align(fmap_depth)  # (B, 256, H, W)
         
         context_feat = self.context_proj(fmap_depth)  # (B, context_dim, H, W)
         
         # Initialize correlation volume with aligned features
-        # Note: fmap_rgb and fmap_depth_aligned should have compatible shapes
-        # Ensure they are the same spatial size
         if fmap_rgb.shape[2:] != fmap_depth_aligned.shape[2:]:
             fmap_depth_aligned = F.interpolate(fmap_depth_aligned, size=fmap_rgb.shape[2:], 
                                                mode='bilinear', align_corners=False)

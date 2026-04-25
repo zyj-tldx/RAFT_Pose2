@@ -321,8 +321,19 @@ class ResNet18Encoder(nn.Module):
         
         # Stem: conv1(stride=2) + bn + relu = stride 2
         # NO maxpool — total stride = 2 * 1 * 2 * 2 = 8
-        self.conv1 = resnet.conv1
-        self.bn1 = resnet.bn1
+        if in_feat == 3 and pretrained:
+            # Use pretrained conv1/bn1 (3-channel input)
+            self.conv1 = resnet.conv1
+            self.bn1 = resnet.bn1
+        else:
+            # Custom stem for non-3-channel input (e.g., 1-channel depth)
+            # Same architecture as ResNet conv1 but with different in_channels
+            self.conv1 = nn.Conv2d(in_feat, 64, kernel_size=7, stride=2, padding=3, bias=False)
+            self.bn1 = nn.BatchNorm2d(64)
+            # Kaiming init for new conv1
+            nn.init.kaiming_normal_(self.conv1.weight, mode='fan_out', nonlinearity='relu')
+            nn.init.constant_(self.bn1.weight, 1)
+            nn.init.constant_(self.bn1.bias, 0)
         self.relu1 = resnet.relu
         
         # ResNet layers (BasicBlock: 2 convs each)
@@ -339,6 +350,9 @@ class ResNet18Encoder(nn.Module):
         
         # Output projection: 512 → output_dim
         self.conv_out = nn.Conv2d(512, output_dim, kernel_size=1)
+        # Normalize output features for stable correlation computation
+        self.out_norm = nn.InstanceNorm2d(output_dim)
+        self.out_relu = nn.ReLU(inplace=True)
         
         if dropout > 0:
             self.dropout = nn.Dropout2d(p=dropout)
@@ -399,4 +413,6 @@ class ResNet18Encoder(nn.Module):
             out = self.dropout(out)
         
         out = self.conv_out(out)
+        out = self.out_norm(out)
+        out = self.out_relu(out)
         return out
