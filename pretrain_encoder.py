@@ -84,15 +84,20 @@ class PretrainAugmentor:
             image = (image + noise).clamp(0.0, 1.0)
         
         # ── Depth augmentations ──
-        # Depth noise (simulates sensor noise)
+        # Depth noise (simulates sensor noise) — only on Ch 0 (raw depth)
         if torch.rand(1).item() < self.prob:
-            depth_noise = torch.randn_like(depth) * 0.02  # ±2cm noise
-            depth = (depth + depth_noise).clamp(min=0.0)
+            depth_noise = torch.randn_like(depth[:, 0:1]) * 0.02
+            depth[:, 0:1] = (depth[:, 0:1] + depth_noise).clamp(min=0.0)
         
-        # Random depth scaling (simulates scale uncertainty)
+        # Random depth scaling (simulates scale uncertainty) — only on Ch 0
         if torch.rand(1).item() < 0.3:
             scale = 0.98 + 0.04 * torch.rand(1).item()  # [0.98, 1.02]
-            depth = depth * scale
+            depth[:, 0:1] = depth[:, 0:1] * scale
+        
+        # Recompute inverse depth (Ch 1) after augmentation
+        valid = depth[0] > 1e-6
+        depth[1, valid] = 1.0 / depth[0, valid]
+        depth[1, ~valid] = 0.0
         
         return image, depth
 
@@ -163,8 +168,10 @@ def project_depth_to_rgb(depth, gt_pose_7d, intrinsic_depth, intrinsic_rgb,
     
     # Downsample depth to feature map resolution (nearest to preserve depth values)
     feat_h, feat_w = H // downsample, W // downsample
+    # Use only Ch 0 (raw depth in meters) for geometric projection
+    depth_raw = depth[:, 0:1, :, :]  # (B, 1, H, W)
     depth_small = F.interpolate(
-        depth, size=(feat_h, feat_w), mode='nearest'
+        depth_raw, size=(feat_h, feat_w), mode='nearest'
     ).squeeze(1)  # (B, feat_h, feat_w)
     
     # Scale intrinsics to feature map resolution

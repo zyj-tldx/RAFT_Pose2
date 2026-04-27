@@ -16,6 +16,7 @@ try:
     )
     from .modules.pose_extractor import BasicEncoder, DepthEncoder, SmallEncoder, ResNet18Encoder
     from .modules.depth_projection import DepthProjector, CorrBlock, PoseCorrSampler
+    from .modules.cross_attention_matcher import CrossAttentionMatcher
     from .modules.pose_update import PoseUpdateNet
 except ImportError:
     from modules.pose_utils import (
@@ -25,6 +26,7 @@ except ImportError:
     )
     from modules.pose_extractor import BasicEncoder, DepthEncoder, SmallEncoder, ResNet18Encoder
     from modules.depth_projection import DepthProjector, CorrBlock, PoseCorrSampler
+    from modules.cross_attention_matcher import CrossAttentionMatcher
     from modules.pose_update import PoseUpdateNet
 
 
@@ -63,6 +65,11 @@ class RAFTPose(nn.Module):
         max_rot_step=0.1,
         max_trans_step=0.1,
         shared_encoder=False,
+        matcher_type='corr',
+        matcher_heads=8,
+        matcher_blocks=2,
+        matcher_ffn_dim=512,
+        matcher_dropout=0.1,
     ):
         """
         Args:
@@ -103,6 +110,11 @@ class RAFTPose(nn.Module):
         self.max_rot_step = max_rot_step
         self.max_trans_step = max_trans_step
         self.shared_encoder = shared_encoder
+        self.matcher_type = matcher_type
+        self.matcher_heads = matcher_heads
+        self.matcher_blocks = matcher_blocks
+        self.matcher_ffn_dim = matcher_ffn_dim
+        self.matcher_dropout = matcher_dropout
 
         # ── Precompute pose sample templates (Optimization 1) ──────────
         # These are constant across all iterations, so compute once.
@@ -166,18 +178,18 @@ class RAFTPose(nn.Module):
         if shared_encoder:
             # Dual encoder mode: two independent ResNet18 (same architecture)
             # RGB encoder uses ImageNet pretrained weights
-            # Depth encoder uses random init (1-channel input)
+            # Depth encoder uses random init (2-channel input: depth + inverse depth)
             if image_encoder == 'resnet18':
                 self.image_encoder = ResNet18Encoder(output_dim=256, norm_fn='instance', dropout=0.1,
                                                      pretrained=True, use_checkpoint=use_checkpoint)
                 self.depth_encoder = ResNet18Encoder(output_dim=256, norm_fn='instance', dropout=0.1,
-                                                     pretrained=False, in_feat=1, use_checkpoint=use_checkpoint)
+                                                     pretrained=False, in_feat=2, use_checkpoint=use_checkpoint)
                 self.fmap_dim = 256
             elif image_encoder == 'basic':
                 self.image_encoder = BasicEncoder(output_dim=256, norm_fn='instance', dropout=0.1,
                                                   use_checkpoint=use_checkpoint)
                 self.depth_encoder = BasicEncoder(output_dim=256, norm_fn='instance', dropout=0.1,
-                                                  in_feat=1, use_checkpoint=use_checkpoint)
+                                                  in_feat=2, use_checkpoint=use_checkpoint)
                 self.fmap_dim = 256
             else:
                 raise ValueError(f"shared_encoder not supported for '{image_encoder}'")
@@ -219,7 +231,11 @@ class RAFTPose(nn.Module):
         # corr_dim is now per-sample C_corr (not N*C_corr), so the network
         # is decoupled from the number of pose samples — training and inference
         # can handle variable numbers of samples.
-        per_sample_corr_dim = (2 * corr_radius + 1) ** 2 * corr_levels
+        if matcher_type == 'attention':
+            per_sample_corr_dim = self.fmap_dim  # Cross-attention outputs fmap_dim channels
+        else:
+            per_sample_corr_dim = (2 * corr_radius + 1) ** 2 * corr_levels
+        self.per_sample_corr_dim = per_sample_corr_dim
         self.pose_update_net = PoseUpdateNet(
             hidden_dim=hidden_dim,
             corr_dim=per_sample_corr_dim,
@@ -227,28 +243,54 @@ class RAFTPose(nn.Module):
             num_layers=3
         )
         
-        # Correlation block placeholder (initialized in forward)
-        self.corr_block = None
+        # Correlation / cross-attention matcher
+        if matcher_type == 'attention':
+            # Register CrossAttentionMatcher as a persistent sub-module
+            # so its parameters are included in model.parameters() and optimized.
+            # Use a large max size for positional encoding; actual features are
+            # sliced to the correct spatial size at runtime.
+            self.corr_block = CrossAttentionMatcher(
+                C_depth=self.fmap_dim,
+                C_rgb=self.fmap_dim,
+                H=128,  # max_h for positional encoding (actual H is sliced)
+                W=160,  # max_w for positional encoding (actual W is sliced)
+                num_heads=self.matcher_heads,
+                feature_dim=self.fmap_dim,
+                ffn_dim=self.matcher_ffn_dim,
+                num_blocks=self.matcher_blocks,
+                dropout=self.matcher_dropout,
+                temperature=self.corr_temperature,
+                num_levels=self.corr_levels,
+                radius=self.corr_radius,
+            )
+        else:
+            # CorrBlock has no learnable parameters, create dynamically in forward
+            self.corr_block = None
         
         # Depth projector for batch pose projection
         self.depth_projector = DepthProjector()
     
     def initialize_correlation(self, fmap_rgb, fmap_depth):
         """
-        Initialize 4D correlation volume between RGB and depth features.
+        Initialize correlation or cross-attention matcher between RGB and depth features.
         
-        The correlation volume is indexed as corr[depth_pos, rgb_pos], so that
-        for each depth pixel (h,w), sampling at projected coord (u,v) gives
-        cos_sim(depth[h,w], rgb[v,u]). This requires fmap1=depth, fmap2=rgb.
+        For 'corr': builds 4D correlation volume (CorrBlock).
+        For 'attention': runs the persistent CrossAttentionMatcher (created in __init__).
         
         Args:
             fmap_rgb: RGB features of shape (B, C, H, W)
             fmap_depth: Depth features of shape (B, C, H, W)
         """
-        self.corr_block = CorrBlock(fmap_depth, fmap_rgb, 
-                                     num_levels=self.corr_levels, 
-                                     radius=self.corr_radius,
-                                     temperature=self.corr_temperature)
+        if self.matcher_type == 'attention':
+            # CrossAttentionMatcher is already registered in __init__.
+            # Just run forward to compute and cache attention features.
+            self.corr_block(fmap_depth, fmap_rgb)
+        else:
+            # CorrBlock has no learnable parameters, safe to create dynamically
+            self.corr_block = CorrBlock(fmap_depth, fmap_rgb, 
+                                         num_levels=self.corr_levels, 
+                                         radius=self.corr_radius,
+                                         temperature=self.corr_temperature)
     
     def initialize_pose(self, batch_size, device):
         """
@@ -741,8 +783,10 @@ class RAFTPose(nn.Module):
         downsample = self.downsample_factor
         feat_h, feat_w = H // downsample, W // downsample
 
+        # Use only Ch 0 (raw depth in meters) for geometric projection
+        depth_raw = depth[:, 0:1, :, :]  # (B, 1, H, W)
         depth_small = F.interpolate(
-            depth, size=(feat_h, feat_w), mode='nearest'
+            depth_raw, size=(feat_h, feat_w), mode='nearest'
         ).squeeze(1)  # (B, feat_h, feat_w)
 
         # Scale intrinsics to match feature map resolution

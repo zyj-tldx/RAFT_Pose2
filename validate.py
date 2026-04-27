@@ -84,13 +84,21 @@ def load_image(path, image_size=None):
 
 
 def load_depth(path, image_size=None, depth_scale=0.001):
-    """Load depth map as (1, H, W) float32 tensor in meters."""
+    """Load depth map as (2, H, W) float32 tensor.
+
+    Ch 0: raw depth in meters (clamped to [0, 10])
+    Ch 1: inverse depth (1/d), 0 where d <= 0
+    """
     depth = Image.open(path)
     if image_size is not None:
         depth = depth.resize((image_size[1], image_size[0]), Image.NEAREST)
     arr = np.array(depth, dtype=np.float32) * depth_scale
     arr = np.clip(arr, 0.0, 10.0)
-    return torch.from_numpy(arr).unsqueeze(0)  # (1, H, W)
+    # Inverse depth
+    valid = arr > 1e-6
+    inv_arr = np.zeros_like(arr)
+    inv_arr[valid] = 1.0 / arr[valid]
+    return torch.from_numpy(np.stack([arr, inv_arr], axis=0))  # (2, H, W)
 
 
 def load_pose(path):
@@ -206,9 +214,15 @@ def depth_to_colored_pointcloud(depth_np, image_np, intrinsic, rel_pose_7d):
     Returns:
         projected_img: (H, W, 3) numpy array, RGB with point cloud overlay
     """
-    H, W = depth_np.shape
+    H, W = depth_np.shape[:2]
     fx, fy = intrinsic[0, 0], intrinsic[1, 1]
     cx, cy = intrinsic[0, 2], intrinsic[1, 2]
+
+    # Use first channel (raw depth) for point cloud projection
+    if depth_np.ndim == 3:
+        depth_1ch = depth_np[0]
+    else:
+        depth_1ch = depth_np
 
     # Pixel coordinates
     u = np.arange(W)
@@ -216,10 +230,10 @@ def depth_to_colored_pointcloud(depth_np, image_np, intrinsic, rel_pose_7d):
     uu, vv = np.meshgrid(u, v)  # (H, W)
 
     # Valid depth mask
-    valid = depth_np > 0.01
+    valid = depth_1ch > 0.01
 
     # Step 1: Back-project to 3D in depth camera frame
-    z = depth_np[valid]
+    z = depth_1ch[valid]
     x = (uu[valid] - cx) / fx * z
     y = (vv[valid] - cy) / fy * z
     pts_depth_cam = np.stack([x, y, z], axis=1)  # (N, 3)
@@ -289,17 +303,23 @@ def save_colored_pcd(depth_np, image_np, intrinsic, rel_pose_7d, output_path):
                      relative pose T_rel from depth cam to image cam
         output_path: str, path to save .pcd file
     """
-    H, W = depth_np.shape
+    H, W = depth_np.shape[:2]
     fx, fy = intrinsic[0, 0], intrinsic[1, 1]
     cx, cy = intrinsic[0, 2], intrinsic[1, 2]
+
+    # Use first channel (raw depth) for point cloud projection
+    if depth_np.ndim == 3:
+        depth_1ch = depth_np[0]
+    else:
+        depth_1ch = depth_np
 
     # Step 1: Back-project depth to 3D in depth camera frame
     u = np.arange(W)
     v = np.arange(H)
     uu, vv = np.meshgrid(u, v)
 
-    valid = depth_np > 0.01
-    z_depth = depth_np[valid]
+    valid = depth_1ch > 0.01
+    z_depth = depth_1ch[valid]
     x_depth = (uu[valid] - cx) / fx * z_depth
     y_depth = (vv[valid] - cy) / fy * z_depth
     pts_depth_cam = np.stack([x_depth, y_depth, z_depth], axis=1)  # (N, 3)
@@ -383,6 +403,32 @@ def parse_args():
                         help="Base directory for test outputs (default: checkpoints)")
     parser.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu")
 
+    # Model hyperparameters (override checkpoint args)
+    parser.add_argument("--shared_encoder", action="store_true", default=None,
+                        help="Use shared encoder architecture (override checkpoint)")
+    parser.add_argument("--no_shared_encoder", action="store_true", default=None,
+                        help="Disable shared encoder (override checkpoint)")
+    parser.add_argument("--image_encoder", type=str, default=None,
+                        choices=["basic", "small", "resnet18"],
+                        help="Image encoder type (override checkpoint)")
+    parser.add_argument("--matcher_type", type=str, default=None,
+                        choices=["corr", "attention"],
+                        help="Matcher type (override checkpoint)")
+    parser.add_argument("--num_iterations", type=int, default=None,
+                        help="Number of GRU iterations (override checkpoint)")
+    parser.add_argument("--hidden_dim", type=int, default=None,
+                        help="Hidden dimension (override checkpoint)")
+    parser.add_argument("--corr_levels", type=int, default=None,
+                        help="Correlation pyramid levels (override checkpoint)")
+    parser.add_argument("--corr_radius", type=int, default=None,
+                        help="Correlation radius (override checkpoint)")
+    parser.add_argument("--max_rot_step", type=float, default=None,
+                        help="Max rotation step per iteration (override checkpoint)")
+    parser.add_argument("--max_trans_step", type=float, default=None,
+                        help="Max translation step per iteration (override checkpoint)")
+    parser.add_argument("--pose_sample_std", type=float, default=None,
+                        help="Base step for directional pose sampling (override checkpoint)")
+
     return parser.parse_args()
 
 
@@ -415,7 +461,7 @@ def main():
     image_size = tuple(args.image_size) if args.image_size else None
 
     image = load_image(args.image, image_size)       # (3, H, W)
-    depth = load_depth(args.depth, image_size, args.depth_scale)  # (1, H, W)
+    depth = load_depth(args.depth, image_size, args.depth_scale)  # (2, H, W)
     T_image = load_pose(args.pose_image)             # (4, 4) world pose of image frame
     T_depth_gt = load_pose(args.pose_depth)          # (4, 4) world pose of depth frame
 
@@ -444,24 +490,58 @@ def main():
     log_print(f"\nLoading checkpoint: {args.checkpoint}")
     checkpoint = torch.load(args.checkpoint, map_location="cpu")
 
-    # Restore model args from checkpoint
+    # Restore model args from checkpoint, allow CLI override
     ckpt_args = checkpoint.get("args", {})
+
+    # Build override dict: CLI args (if not None) take precedence over checkpoint
+    overrides = {}
+    for key in ["image_encoder", "num_iterations", "hidden_dim", "corr_levels",
+                "corr_radius", "max_rot_step", "max_trans_step", "matcher_type",
+                "pose_sample_std"]:
+        val = getattr(args, key, None)
+        if val is not None:
+            overrides[key] = val
+
+    # Handle shared_encoder specially (store_true / store_false pattern)
+    if args.shared_encoder:
+        overrides["shared_encoder"] = True
+    elif args.no_shared_encoder:
+        overrides["shared_encoder"] = False
+
+    if overrides:
+        log_print(f"  [Override] CLI overrides: {overrides}")
+
     model = RAFTPose(
-        image_encoder=ckpt_args.get("image_encoder", "basic"),
-        hidden_dim=ckpt_args.get("hidden_dim", 128),
+        image_encoder=overrides.get("image_encoder", ckpt_args.get("image_encoder", "basic")),
+        hidden_dim=overrides.get("hidden_dim", ckpt_args.get("hidden_dim", 128)),
         context_dim=ckpt_args.get("context_dim", 64),
         depth_dim=ckpt_args.get("depth_dim", 32),
-        corr_levels=ckpt_args.get("corr_levels", 4),
-        corr_radius=ckpt_args.get("corr_radius", 2),
-        num_iterations=ckpt_args.get("num_iterations", 12),
-        pose_sample_std=ckpt_args.get("pose_sample_std", 0.01),
+        corr_levels=overrides.get("corr_levels", ckpt_args.get("corr_levels", 4)),
+        corr_radius=overrides.get("corr_radius", ckpt_args.get("corr_radius", 2)),
+        num_iterations=overrides.get("num_iterations", ckpt_args.get("num_iterations", 12)),
+        pose_sample_std=overrides.get("pose_sample_std", ckpt_args.get("pose_sample_std", 0.01)),
         init_pose_noise_std=ckpt_args.get("init_pose_noise_std", 0.05),
         coarse_to_fine=ckpt_args.get("coarse_to_fine", False),
         corr_temperature=ckpt_args.get("corr_temperature", 1.0),
-        max_rot_step=ckpt_args.get("max_rot_step", 0.3),
-        max_trans_step=ckpt_args.get("max_trans_step", 0.3),
+        max_rot_step=overrides.get("max_rot_step", ckpt_args.get("max_rot_step", 0.3)),
+        max_trans_step=overrides.get("max_trans_step", ckpt_args.get("max_trans_step", 0.3)),
+        shared_encoder=overrides.get("shared_encoder", ckpt_args.get("shared_encoder", False)),
+        matcher_type=overrides.get("matcher_type", ckpt_args.get("matcher_type", "corr")),
+        matcher_heads=ckpt_args.get("matcher_heads", 8),
+        matcher_blocks=ckpt_args.get("matcher_blocks", 2),
+        matcher_ffn_dim=ckpt_args.get("matcher_ffn_dim", 512),
+        matcher_dropout=ckpt_args.get("matcher_dropout", 0.1),
     )
-    model.load_state_dict(checkpoint["model_state_dict"])
+    # Filter out unexpected keys (e.g., runtime caches like corr_block._cached_*)
+    model_state = checkpoint["model_state_dict"]
+    model_keys = set(model.state_dict().keys())
+    filtered_state = {k: v for k, v in model_state.items() if k in model_keys}
+    unexpected = [k for k in model_state if k not in model_keys]
+    if unexpected:
+        log_print(f"  [Info] Filtering {len(unexpected)} unexpected keys: {unexpected}")
+    missing, _ = model.load_state_dict(filtered_state, strict=True)
+    if missing:
+        log_print(f"  [Warning] Missing keys: {missing}")
     model = model.to(device)
     model.eval()
 
@@ -487,7 +567,7 @@ def main():
         )
 
     pred_rel_pose_7d = pred_pose[0].cpu().numpy()  # (7,)
-    pose_seq_np = pose_sequence[0].cpu().numpy()  # (num_iters+1, 7)
+    pose_seq_np = pose_sequence['pose_sequence'][0].cpu().numpy()  # (num_iters+1, 7)
 
     # ─── Compute updated world poses ─────────────────────────────────────
     # T_pred_world = T_image @ T_rel_pred
@@ -546,7 +626,7 @@ def main():
     log_print(f"\nGenerating visualization...")
 
     image_np = (image.permute(1, 2, 0).numpy() * 255).astype(np.uint8)  # (H, W, 3)
-    depth_np = depth.squeeze(0).numpy()  # (H, W)
+    depth_np = depth[0].numpy()  # (H, W) - use first channel (raw depth)
     intrinsic_np = intrinsic_matrix.numpy()
 
     # Use relative poses for visualization: depth → image cam → project to image
@@ -616,7 +696,7 @@ def main():
         ],
     }
     with open(metrics_path, "w") as f:
-        json.dump(metrics_output, f, indent=2)
+        json.dump(metrics_output, f, indent=2, default=float)
     log_print(f"  Metrics saved to: {metrics_path}")
 
     log_print(f"\nDone! All outputs saved to: {test_dir}")

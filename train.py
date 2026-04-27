@@ -161,6 +161,11 @@ def build_model(args):
         max_rot_step=getattr(args, 'max_rot_step', 0.3),
         max_trans_step=getattr(args, 'max_trans_step', 0.3),
         shared_encoder=getattr(args, 'shared_encoder', False),
+        matcher_type=getattr(args, 'matcher_type', 'corr'),
+        matcher_heads=getattr(args, 'matcher_heads', 8),
+        matcher_blocks=getattr(args, 'matcher_blocks', 2),
+        matcher_ffn_dim=getattr(args, 'matcher_ffn_dim', 512),
+        matcher_dropout=getattr(args, 'matcher_dropout', 0.1),
     )
     return model
 
@@ -387,6 +392,18 @@ def parse_args():
     parser.add_argument("--shared_encoder", action="store_true",
                         help="Use same encoder for RGB and depth (Siamese). "
                              "Depth is repeated to 3 channels. No separate depth encoder.")
+    parser.add_argument("--matcher_type", type=str, default="corr",
+                        choices=["corr", "attention"],
+                        help="Feature matching method: 'corr' for correlation volume (CorrBlock), "
+                             "'attention' for cross-attention matcher (CrossAttentionMatcher).")
+    parser.add_argument("--matcher_heads", type=int, default=8,
+                        help="Number of attention heads for cross-attention matcher.")
+    parser.add_argument("--matcher_blocks", type=int, default=2,
+                        help="Number of cross-attention blocks.")
+    parser.add_argument("--matcher_ffn_dim", type=int, default=512,
+                        help="FFN hidden dimension in cross-attention blocks.")
+    parser.add_argument("--matcher_dropout", type=float, default=0.1,
+                        help="Dropout rate for cross-attention matcher.")
     parser.add_argument("--hidden_dim", type=int, default=128)
     parser.add_argument("--context_dim", type=int, default=64)
     parser.add_argument("--depth_dim", type=int, default=32)
@@ -413,7 +430,7 @@ def parse_args():
     # Loss weights
     parser.add_argument("--rot_weight", type=float, default=100.0,
                         help="Weight for rotation loss (in degrees via rad-to-deg scaling)")
-    parser.add_argument("--trans_weight", type=float, default=20.0,
+    parser.add_argument("--trans_weight", type=float, default=50.0,
                         help="Weight for translation loss (in meters)")
 
     # Curriculum learning

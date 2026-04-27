@@ -6,7 +6,9 @@ PyTorch Dataset / DataLoader for training and validation.
 
 Each sample returns:
     image:          (3, H, W) float32 RGB image, normalized to [0, 1]
-    depth:          (1, H, W) float32 depth map in meters
+    depth:          (2, H, W) float32 depth representation
+                    Ch 0: raw depth in meters
+                    Ch 1: inverse depth (1/d), 0 where d=0
     intrinsic_rgb:  (3, 3) float32 RGB camera intrinsic matrix
     intrinsic_depth:(3, 3) float32 depth camera intrinsic matrix
     gt_pose:        (7,) float32 relative pose [qw, qx, qy, qz, tx, ty, tz]
@@ -108,7 +110,11 @@ class SevenScenesDataset(Dataset):
         return torch.from_numpy(arr).permute(2, 0, 1)  # (3, H, W)
 
     def _load_depth(self, scene, seq, frame):
-        """Load depth map as float32 tensor (1, H, W) in meters."""
+        """Load depth map as 2-channel float32 tensor (2, H, W).
+
+        Ch 0: raw depth in meters (clamped to [0, 10])
+        Ch 1: inverse depth (1/d), 0 where d <= 0
+        """
         path = os.path.join(self.dataset_root, scene, seq, f"depth_{frame}.png")
         depth = Image.open(path)
         depth = depth.resize((self.image_size[1], self.image_size[0]), Image.NEAREST)
@@ -116,7 +122,14 @@ class SevenScenesDataset(Dataset):
         arr = arr * self.depth_scale  # Convert to meters
         # Clamp invalid depths (0 or very large)
         arr = np.clip(arr, 0.0, 10.0)  # Max 10 meters
-        return torch.from_numpy(arr).unsqueeze(0)  # (1, H, W)
+
+        # Inverse depth: 1/d, with safe division (0 where d <= 0)
+        valid = arr > 1e-6
+        inv_arr = np.zeros_like(arr)
+        inv_arr[valid] = 1.0 / arr[valid]
+
+        # Stack: (2, H, W)
+        return torch.from_numpy(np.stack([arr, inv_arr], axis=0))
 
     def _load_pose(self, scene, seq, frame):
         """Load 4x4 camera pose matrix."""

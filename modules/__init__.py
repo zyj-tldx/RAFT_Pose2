@@ -32,6 +32,10 @@ try:
         PoseCorrSampler
     )
 
+    from .cross_attention_matcher import (
+        CrossAttentionMatcher
+    )
+
     from .pose_update import (
         ConvGRU,
         PoseRegressionHead,
@@ -67,6 +71,10 @@ except ImportError:
         PoseCorrSampler
     )
 
+    from cross_attention_matcher import (
+        CrossAttentionMatcher
+    )
+
     from pose_update import (
         ConvGRU,
         PoseRegressionHead,
@@ -94,6 +102,7 @@ __all__ = [
     'DepthProjector',
     'CorrBlock',
     'PoseCorrSampler',
+    'CrossAttentionMatcher',
     'ConvGRU',
     'PoseRegressionHead',
     'PoseUpdateNet'
