@@ -18,7 +18,7 @@ import os
 import json
 import numpy as np
 import torch
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset, DataLoader, ConcatDataset
 from pathlib import Path
 from PIL import Image
 
@@ -60,19 +60,32 @@ class SevenScenesDataset(Dataset):
         self.augment = augment
         self.normalize_image = normalize_image
 
-        # Camera intrinsics (same for RGB and depth in 7Scenes)
+        # Camera intrinsics
         intr = config["camera_intrinsics"]
-        self.intrinsic_matrix = torch.tensor([
-            [intr["fx"], 0.0,        intr["cx"]],
-            [0.0,        intr["fy"], intr["cy"]],
-            [0.0,        0.0,        1.0        ],
-        ], dtype=torch.float32)
 
-        # Image size
+        # Original image size from config (intrinsics correspond to this resolution)
+        self.orig_image_size = tuple(config.get("image_size", [480, 640]))
+
+        # Determine target image size
         if image_size is not None:
             self.image_size = tuple(image_size)
         else:
-            self.image_size = tuple(config.get("image_size", [480, 640]))
+            self.image_size = self.orig_image_size
+
+        # Scale intrinsics if target size differs from original
+        if self.image_size != self.orig_image_size:
+            sx = self.image_size[1] / self.orig_image_size[1]  # W_target / W_orig
+            sy = self.image_size[0] / self.orig_image_size[0]  # H_target / H_orig
+            fx, fy = intr["fx"] * sx, intr["fy"] * sy
+            cx, cy = intr["cx"] * sx, intr["cy"] * sy
+        else:
+            fx, fy, cx, cy = intr["fx"], intr["fy"], intr["cx"], intr["cy"]
+
+        self.intrinsic_matrix = torch.tensor([
+            [fx, 0.0, cx],
+            [0.0, fy, cy],
+            [0.0, 0.0, 1.0],
+        ], dtype=torch.float32)
 
         # Depth scale: convert raw depth values to meters
         if depth_scale is not None:
@@ -91,8 +104,11 @@ class SevenScenesDataset(Dataset):
         if not self.samples:
             raise ValueError(f"No samples found for split '{split}' in {config_path}")
 
-        print(f"[SevenScenesDataset] split={split}, samples={len(self.samples)}, "
-              f"image_size={self.image_size}, depth_scale={self.depth_scale}")
+        print(f"[SevenScenesDataset] {os.path.basename(config_path)} split={split}, "
+              f"samples={len(self.samples)}, "
+              f"orig={self.orig_image_size}→{self.image_size}, "
+              f"K=({fx:.1f}, {fy:.1f}, {cx:.1f}, {cy:.1f}), "
+              f"depth_scale={self.depth_scale}")
 
     def __len__(self):
         return len(self.samples)
@@ -259,6 +275,80 @@ def get_dataloader(
 
     dataloader = DataLoader(
         dataset,
+        batch_size=batch_size,
+        shuffle=shuffle,
+        num_workers=num_workers,
+        pin_memory=True,
+        drop_last=(split == "train"),
+        persistent_workers=(num_workers > 0),
+    )
+
+    return dataloader
+
+
+def get_multi_config_dataloader(
+    config_paths,
+    split="train",
+    batch_size=4,
+    num_workers=4,
+    shuffle=None,
+    augment=None,
+    image_size=None,
+):
+    """
+    Create DataLoader from multiple config files with unified image size.
+
+    Each config can have its own image_size and camera_intrinsics.
+    Images are resized to the target image_size and intrinsics are scaled accordingly.
+    Datasets are concatenated using ConcatDataset.
+
+    Args:
+        config_paths: List of paths to JSON config files
+        split: 'train' or 'val'
+        batch_size: Batch size
+        num_workers: Number of data loading workers
+        shuffle: Whether to shuffle (default: True for train, False for val)
+        augment: Whether to augment (default: True for train, False for val)
+        image_size: Unified target image size (H, W). If None, each config uses its own size.
+
+    Returns:
+        DataLoader instance
+    """
+    if shuffle is None:
+        shuffle = (split == "train")
+    if augment is None:
+        augment = (split == "train")
+
+    datasets = []
+    skipped = []
+    for config_path in config_paths:
+        try:
+            ds = SevenScenesDataset(
+                config_path=config_path,
+                split=split,
+                image_size=image_size,
+                augment=augment,
+            )
+            datasets.append(ds)
+        except ValueError as e:
+            skipped.append((config_path, str(e)))
+
+    if skipped:
+        for path, reason in skipped:
+            print(f"  [MultiConfig] Skipped {os.path.basename(path)}: {reason}")
+
+    if not datasets:
+        raise ValueError(f"No valid datasets found for split '{split}'")
+
+    if len(datasets) == 1:
+        combined = datasets[0]
+    else:
+        combined = ConcatDataset(datasets)
+        print(f"[MultiConfig] Combined {len(datasets)} datasets, "
+              f"total {len(combined)} samples ({split})")
+
+    dataloader = DataLoader(
+        combined,
         batch_size=batch_size,
         shuffle=shuffle,
         num_workers=num_workers,
