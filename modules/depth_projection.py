@@ -492,7 +492,7 @@ class CorrBlock(nn.Module):
                     has_valid = (n_valid > 0).float()  # (B,)
                     n_valid_safe = n_valid.clamp(min=1)  # (B,) for k computation
 
-                    k = max(1, int(0.2 * H * W))  # top 20% of spatial positions
+                    k = max(1, int(1 * H * W))  # top 20% of spatial positions
                     k = min(k, int(n_valid_safe.min().item()))  # don't exceed valid count
 
                     # Set invalid positions to -inf so they're never selected
