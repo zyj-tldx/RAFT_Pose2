@@ -1,0 +1,224 @@
+{
+    "dataset_root": "../7Scenes/data",
+    "output": "tart_scenes_train.json",
+    "camera_intrinsics": {
+        "fx": 320.0,
+        "fy": 320.0,
+        "cx": 319.5,
+        "cy": 319.5
+    },
+    "image_size": [640, 640],
+    "depth_scale": 0.001,
+    "strategy": "stride_pairs",
+    "strategy_args": {
+        "min_offset": 1,
+        "max_offset": 10,
+        "samples_per_group": 200
+    },
+    "seed": 42,
+    "groups": [
+        {
+            "scene": "tartoffice",
+            "seq": "P0000",
+            "frame_range": [0, 90],
+            "stride_range": [1, 5],
+            "split": "train"
+        },
+        {
+            "scene": "tartoffice",
+            "seq": "P0000",
+            "frame_range": [91, 100],
+            "stride_range": [1, 5],
+            "split": "val"
+        },
+        {
+            "scene": "tartoffice",
+            "seq": "P0000",
+            "frame_range": [101, 190],
+            "stride_range": [1, 5],
+            "split": "train"
+        },
+        {
+            "scene": "tartoffice",
+            "seq": "P0000",
+            "frame_range": [191, 200],
+            "stride_range": [1, 5],
+            "split": "val"
+        },
+        {
+            "scene": "tartoffice",
+            "seq": "P0000",
+            "frame_range": [201, 290],
+            "stride_range": [1, 5],
+            "split": "train"
+        },
+        {
+            "scene": "tartoffice",
+            "seq": "P0000",
+            "frame_range": [291, 300],
+            "stride_range": [1, 5],
+            "split": "val"
+        },
+        {
+            "scene": "tartoffice",
+            "seq": "P0000",
+            "frame_range": [301, 390],
+            "stride_range": [1, 5],
+            "split": "train"
+        },
+        {
+            "scene": "tartoffice",
+            "seq": "P0000",
+            "frame_range": [391, 400],
+            "stride_range": [1, 5],
+            "split": "val"
+        },
+        {
+            "scene": "tartoffice",
+            "seq": "P0000",
+            "frame_range": [401, 490],
+            "stride_range": [1, 5],
+            "split": "train"
+        },
+        {
+            "scene": "tartoffice",
+            "seq": "P0000",
+            "frame_range": [491, 500],
+            "stride_range": [1, 5],
+            "split": "val"
+        },
+        {
+            "scene": "tartoffice",
+            "seq": "P0000",
+            "frame_range": [501, 590],
+            "stride_range": [1, 5],
+            "split": "train"
+        },
+        {
+            "scene": "tartoffice",
+            "seq": "P0000",
+            "frame_range": [591, 600],
+            "stride_range": [1, 5],
+            "split": "val"
+        },
+        {
+            "scene": "tartoffice",
+            "seq": "P0000",
+            "frame_range": [601, 677],
+            "stride_range": [1, 5],
+            "split": "train"
+        },
+        {
+            "scene": "tarthospital",
+            "seq": "P0000",
+            "frame_range": [0, 900],
+            "stride_range": [1, 5],
+            "split": "train"
+        },
+        {
+            "scene": "tarthospital",
+            "seq": "P0000",
+            "frame_range": [901, 1000],
+            "stride_range": [1, 5],
+            "split": "val"
+        },
+        {
+            "scene": "tarthospital",
+            "seq": "P0000",
+            "frame_range": [1001, 1900],
+            "stride_range": [1, 5],
+            "split": "train"
+        },
+        {
+            "scene": "tarthospital",
+            "seq": "P0000",
+            "frame_range": [1901, 2011],
+            "stride_range": [1, 5],
+            "split": "val"
+        },
+        {
+            "scene": "tarthouse",
+            "seq": "P0000",
+            "frame_range": [0, 190],
+            "stride_range": [1, 5],
+            "split": "train"
+        },
+        {
+            "scene": "tarthouse",
+            "seq": "P0000",
+            "frame_range": [191, 220],
+            "stride_range": [1, 5],
+            "split": "val"
+        },
+        {
+            "scene": "tarthouse",
+            "seq": "P0000",
+            "frame_range": [221, 300],
+            "stride_range": [1, 5],
+            "split": "train"
+        },
+        {
+            "scene": "tarthouse",
+            "seq": "P0000",
+            "frame_range": [301, 355],
+            "stride_range": [1, 5],
+            "split": "val"
+        },
+        {
+            "scene": "tarthouse",
+            "seq": "P0001",
+            "frame_range": [0, 190],
+            "stride_range": [1, 5],
+            "split": "train"
+        },
+        {
+            "scene": "tarthouse",
+            "seq": "P0001",
+            "frame_range": [191, 230],
+            "stride_range": [1, 5],
+            "split": "val"
+        },
+        {
+            "scene": "tarthouse",
+            "seq": "P0001",
+            "frame_range": [231, 410],
+            "stride_range": [1, 5],
+            "split": "train"
+        },
+        {
+            "scene": "tarthouse",
+            "seq": "P0001",
+            "frame_range": [411, 469],
+            "stride_range": [1, 5],
+            "split": "val"
+        },
+        {
+            "scene": "tarthouse",
+            "seq": "P0002",
+            "frame_range": [0, 500],
+            "stride_range": [1, 5],
+            "split": "train"
+        },
+        {
+            "scene": "tarthouse",
+            "seq": "P0002",
+            "frame_range": [501, 600],
+            "stride_range": [1, 5],
+            "split": "val"
+        },
+        {
+            "scene": "tarthouse",
+            "seq": "P0002",
+            "frame_range": [601, 1200],
+            "stride_range": [1, 5],
+            "split": "train"
+        },
+        {
+            "scene": "tarthouse",
+            "seq": "P0002",
+            "frame_range": [1201, 1322],
+            "stride_range": [1, 5],
+            "split": "val"
+        }
+    ]
+}

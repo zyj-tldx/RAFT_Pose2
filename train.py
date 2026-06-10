@@ -33,7 +33,7 @@ sys.path.insert(0, str(RAFT_POSE_DIR))
 
 from raft_pose import RAFTPose
 from pose_loss import PoseLoss, DeltaPoseLoss
-from dataloader import get_dataloader
+from dataloader import get_multi_config_dataloader
 
 
 # ─── Utilities ────────────────────────────────────────────────────────────────
@@ -378,13 +378,15 @@ def parse_args():
     parser = argparse.ArgumentParser(description="RAFT-Pose Training")
 
     # Data
-    parser.add_argument("--config", type=str, required=True,
-                        help="Path to JSON config file")
+    parser.add_argument("--config", type=str, required=True, nargs='+',
+                        help="Path(s) to JSON config file(s). "
+                             "Multiple configs are combined with unified resolution.")
     parser.add_argument("--num_workers", type=int, default=4,
                         help="DataLoader workers")
-    parser.add_argument("--image_size", type=int, nargs=2, default=None,
+    parser.add_argument("--image_size", type=int, nargs=2, default=[480, 640],
                         metavar=("H", "W"),
-                        help="Override image size (H W). Recommended: 256 320")
+                        help="Unified target image size for all datasets (H W). "
+                             "Intrinsics are scaled accordingly. Default: 480 640")
 
     # Model architecture
     parser.add_argument("--image_encoder", type=str, default="basic",
@@ -430,7 +432,7 @@ def parse_args():
     # Loss weights
     parser.add_argument("--rot_weight", type=float, default=100.0,
                         help="Weight for rotation loss (in degrees via rad-to-deg scaling)")
-    parser.add_argument("--trans_weight", type=float, default=50.0,
+    parser.add_argument("--trans_weight", type=float, default=100.0,
                         help="Weight for translation loss (in meters)")
 
     # Curriculum learning
@@ -527,18 +529,24 @@ def main():
     log_print(f"Arguments: {json.dumps(vars(args), indent=2)}")
 
     # ─── Data ─────────────────────────────────────────────────────────────
-    train_loader = get_dataloader(
+    target_size = tuple(args.image_size)
+    if len(args.config) > 1:
+        log_print(f"Multi-config mode: {len(args.config)} datasets, target_size={target_size}")
+        for cfg in args.config:
+            log_print(f"  - {cfg}")
+
+    train_loader = get_multi_config_dataloader(
         args.config, split="train",
         batch_size=args.batch_size,
         num_workers=args.num_workers,
-        image_size=tuple(args.image_size) if args.image_size else None,
+        image_size=target_size,
         augment=False,
     )
-    val_loader = get_dataloader(
+    val_loader = get_multi_config_dataloader(
         args.config, split="val",
         batch_size=args.batch_size,
         num_workers=args.num_workers,
-        image_size=tuple(args.image_size) if args.image_size else None,
+        image_size=target_size,
     )
 
     # ─── Model ────────────────────────────────────────────────────────────
