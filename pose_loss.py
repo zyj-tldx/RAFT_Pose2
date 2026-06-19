@@ -232,8 +232,12 @@ class PoseLoss(nn.Module):
         gt_trans = gt_pose[:, 4:7]
 
         total_loss = torch.tensor(0.0, device=gt_pose.device)
-        total_rot_loss = 0.0
-        total_trans_loss = 0.0
+        # Accumulate as GPU tensors — NOT .item() per iteration. Calling .item()
+        # inside this loop forces a GPU->CPU sync every step (K times) and chops
+        # up the pipeline, which is the main cause of GPU-util fluctuation during
+        # training. Item() once at the end, only for logging.
+        total_rot_loss = torch.tensor(0.0, device=gt_pose.device)
+        total_trans_loss = torch.tensor(0.0, device=gt_pose.device)
         weight_sum = 0.0
 
         for i in range(K):
@@ -249,19 +253,19 @@ class PoseLoss(nn.Module):
             iter_loss = self.rot_weight * rot_loss + self.trans_weight * trans_loss
 
             total_loss = total_loss + weight * iter_loss
-            total_rot_loss += weight * rot_loss.item()
-            total_trans_loss += weight * trans_loss.item()
+            total_rot_loss = total_rot_loss + weight * rot_loss
+            total_trans_loss = total_trans_loss + weight * trans_loss
             weight_sum += weight
 
         # Normalize by total weight
-        total_rot_loss /= weight_sum
-        total_trans_loss /= weight_sum
+        total_rot_loss = total_rot_loss / weight_sum
+        total_trans_loss = total_trans_loss / weight_sum
 
         details = {
-            'total_loss': total_loss.item() / weight_sum,
-            'rot_loss': total_rot_loss,
-            'rot_loss_deg': total_rot_loss * (180.0 / 3.14159265358979),
-            'trans_loss': total_trans_loss,
+            'total_loss': (total_loss / weight_sum).item(),
+            'rot_loss': total_rot_loss.item(),
+            'rot_loss_deg': total_rot_loss.item() * (180.0 / 3.14159265358979),
+            'trans_loss': total_trans_loss.item(),
         }
 
         return total_loss / weight_sum, details
@@ -361,8 +365,10 @@ class DeltaPoseLoss(nn.Module):
         gt_trans = gt_pose[:, 4:7]  # (B, 3)
 
         total_loss = torch.tensor(0.0, device=gt_pose.device)
-        total_rot_loss = 0.0
-        total_trans_loss = 0.0
+        # Accumulate as GPU tensors (see PoseLoss.forward_sequence — avoid per-iter
+        # .item() syncs that chop the GPU pipeline and cause util fluctuation).
+        total_rot_loss = torch.tensor(0.0, device=gt_pose.device)
+        total_trans_loss = torch.tensor(0.0, device=gt_pose.device)
         weight_sum = 0.0
 
         for i in range(K):
@@ -391,16 +397,16 @@ class DeltaPoseLoss(nn.Module):
             trans_loss = F.l1_loss(pred_dts[:, i], true_dt)
 
             total_loss = total_loss + weight * (self.rot_weight * rot_loss + self.trans_weight * trans_loss)
-            total_rot_loss += weight * rot_loss.item()
-            total_trans_loss += weight * trans_loss.item()
+            total_rot_loss = total_rot_loss + weight * rot_loss
+            total_trans_loss = total_trans_loss + weight * trans_loss
             weight_sum += weight
 
-        total_rot_loss /= weight_sum
-        total_trans_loss /= weight_sum
+        total_rot_loss = total_rot_loss / weight_sum
+        total_trans_loss = total_trans_loss / weight_sum
 
         details = {
-            'delta_rot_loss': total_rot_loss,
-            'delta_trans_loss': total_trans_loss,
+            'delta_rot_loss': total_rot_loss.item(),
+            'delta_trans_loss': total_trans_loss.item(),
             'delta_total_loss': (total_loss / weight_sum).item(),
         }
 

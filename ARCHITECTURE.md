@@ -1,685 +1,178 @@
-# RAFT-Pose 模型架构详解
+# RAFT-Pose 模型架构与推理流程
 
-> 基于当前代码库（`newencoder` 分支），包含 Dual ResNet18 + Cross-Attention Matcher。
-
----
-
-## 目录
-
-1. [整体架构概览](#1-整体架构概览)
-2. [Step 0: 数据输入](#step-0-数据输入)
-3. [Step 1: 特征编码 (Feature Encoding)](#step-1-特征编码-feature-encoding)
-4. [Step 2: 特征匹配 (Feature Matching)](#step-2-特征匹配-feature-matching)
-5. [Step 3: 深度投影 (Depth Projection)](#step-3-深度投影-depth-projection)
-6. [Step 4: 相关性采样 (Correlation Sampling)](#step-4-相关性采样-correlation-sampling)
-7. [Step 5: Top-K 聚合 (Confidence Aggregation)](#step-5-top-k-聚合-confidence-aggregation)
-8. [Step 6: 姿态更新网络 (Pose Update Network)](#step-6-姿态更新网络-pose-update-network)
-9. [Step 7: 姿态更新 (Pose Update via SE(3))](#step-7-姿态更新-pose-update-via-se3)
-10. [Step 8: 迭代优化 (Iterative Refinement)](#step-8-迭代优化-iterative-refinement)
-11. [损失函数](#11-损失函数)
-12. [参数量统计](#12-参数量统计)
+> 本文描述 **Stage 1（RGB↔RGB 共享 encoder）** 之后的当前代码状态（`newencoder` 分支）。
+> 对应文件：[raft_pose.py](raft_pose.py)、[modules/pose_extractor.py](modules/pose_extractor.py)、[modules/depth_projection.py](modules/depth_projection.py)、[modules/pose_update.py](modules/pose_update.py)、[modules/pose_utils.py](modules/pose_utils.py)。
 
 ---
 
-## 1. 整体架构概览
+## 1. 概述
+
+RAFT-Pose 是一个**迭代式（iterative）的 RGB-D 相对位姿估计网络**：给定两帧（帧 A = RGB，帧 B = RGB + 深度），估计把帧 B 变换到帧 A 坐标系的相对位姿（6DoF）。思路借鉴 RAFT 光流的「相关代价体 + ConvGRU 迭代精修」，把 2D 光流换成由深度驱动的 6DoF 几何投影。
+
+**核心设计（Stage 1）**：
+- **一个共享 RGB encoder**（真 Siamese，一套权重）分别编码帧 A、帧 B 的 RGB → 匹配是 **RGB↔RGB 外观相关**（判别性来自 encoder 学到的边缘/纹理）。
+- **深度不进 encoder**，只作**几何投影**：决定相关在哪采样、把帧 B 的点反投影到帧 A。
+- 迭代分两段：**Coarse**（1/8，方向位姿假设探测 + 置信度聚合）→ **Fine**（1/4，动态特征对齐残差）。
 
 ```
-输入: image (B,3,480,640) + depth (B,2,480,640) + intrinsics
-                    │                              │
-              ┌─────┴─────┐                  ┌─────┴─────┐
-              │ RGB Encoder│                  │Depth Encoder│
-              │ (ResNet18) │                  │ (ResNet18) │
-              │ ImageNet预训练│                │ 随机初始化    │
-              └─────┬─────┘                  └─────┬─────┘
-                    │                              │
-              fmap_rgb                       fmap_depth
-           (B,256,60,80)                  (B,256,60,80)
-                    │                              │
-                    │    ┌─────────────────────────┘
-                    │    │  Context Projection
-                    │    │  context_feat (B,64,60,80)
-                    │    │
-              ┌─────┴────┴────────────────────────────┐
-              │     Feature Matching                   │
-              │  Cross-Attention Matcher / CorrBlock   │
-              └──────────────────┬────────────────────┘
-                                 │
-                    ┌────────────┴────────────┐
-                    │  Iterative Refinement    │
-                    │  (K=12 iterations)       │
-                    │                          │
-                    │  ┌──────────────────┐    │
-                    │  │ 1. 生成37个pose采样│    │
-                    │  │ 2. 深度投影       │    │
-                    │  │ 3. 相关性采样     │    │
-                    │  │ 4. Top-K聚合      │    │
-                    │  │ 5. ConvGRU更新    │    │
-                    │  │ 6. 预测pose delta │    │
-                    │  │ 7. SE(3)更新pose  │    │
-                    │  └──────────────────┘    │
-                    └────────────┬────────────┘
-                                 │
-                        final_pose (B, 7)
-                   [qw, qx, qy, qz, tx, ty, tz]
+帧A RGB ──► image_encoder ──► fmap_A (外观) ─┐
+                (共享权重)                     ├─ 相关 = 外观 vs 外观 ✓
+帧B RGB ──► image_encoder ──► fmap_B (外观) ─┘
+帧B raw depth ──► depth_projector ──► 采样坐标 (几何: 在哪采)
 ```
-
-**核心思想**：借鉴 RAFT 光流估计的迭代优化范式，将 pose 估计问题转化为"在 pose 空间中搜索最优匹配"的问题。每一轮迭代生成多个候选 pose，通过深度投影+特征匹配评估每个候选的质量，然后预测一个小的 pose 修正量。
 
 ---
 
-## Step 0: 数据输入
+## 2. 输入与数据格式
 
-**代码位置**: `dataloader.py` → `SevenScenesDataset.__getitem__()` (line ~195)
+模型 `forward(image, depth, intrinsic_rgb, intrinsic_depth, init_pose=None)`：
 
-### 输入数据
-
-| 数据 | 形状 | 说明 |
+| 输入 | 形状 | 含义 |
 |------|------|------|
-| `image` | `(B, 3, H, W)` | RGB 图像，归一化到 [0, 1] |
-| `depth` | `(B, 2, H, W)` | 双通道深度表示 |
-| `intrinsic_rgb` | `(B, 3, 3)` | RGB 相机内参矩阵 |
-| `intrinsic_depth` | `(B, 3, 3)` | 深度相机内参矩阵 |
-| `gt_pose` | `(B, 7)` | GT 相对位姿 [qw,qx,qy,qz,tx,ty,tz] |
+| `image` | `(B, 3, H, W)` | 帧 A 的 RGB，归一化到 [0,1] |
+| `depth` | `(B, 4, H, W)` | 帧 B，`[raw_depth, R, G, B]`：ch0 原始深度（米），ch1:3 帧 B 的 RGB（归一化 [0,1]，喂 encoder） |
+| `intrinsic_rgb` / `intrinsic_depth` | `(B, 3, 3)` | 两相机内参（7Scenes/TartanAir 中相同） |
+| `init_pose` | `(B, 7)` 或 None | 初始位姿；None 时用单位位姿 |
 
-### Depth 双通道编码
+**位姿约定**（[dataloader.py](dataloader.py) `_compute_relative_pose`）：`gt_pose = inv(T_img) @ T_depth`，即**帧 B → 帧 A** 的变换。7D 表示 `[qw, qx, qy, qz, tx, ty, tz]`（单位四元数 + 平移米）。
 
-**代码位置**: `dataloader.py` → `_load_depth()` (line ~113)
+**输出**：`final_pose (B, 7)`；可选 `pose_sequence (B, K+1, 7)`（初始 + 每次迭代后）、`delta_sequence`（每次迭代的 rot_vec / dt）。
 
+---
+
+## 3. 编码器（共享 ResNet18）
+
+[modules/pose_extractor.py](modules/pose_extractor.py) `ResNet18Encoder`，ImageNet 预训练，InstanceNorm。**两帧共用同一个实例**（`self.image_encoder`），真权重共享。
+
+- stem（conv7×7 s2）→ layer1(s1) → layer2(s2) → layer3(s2) → layer4(s1，无下采样精修)；总步长 8。
+- **多尺度输出**：
+  - `feat_1_8`：layer4 → conv_out（512→256），H/8，供 coarse 相关。
+  - `feat_1_4`：layer2（128ch）→ conv_1_4（128→256），H/4，供 fine 对齐。
+
+forward 中（[raft_pose.py](raft_pose.py) `forward`）：
 ```python
-# Ch 0: 原始深度 (米)
-arr = np.clip(arr * depth_scale, 0.0, 10.0)
-
-# Ch 1: 逆深度 (1/d)，无效深度处置零
-inv_arr = np.zeros_like(arr)
-inv_arr[valid] = 1.0 / arr[valid]
-
-return torch.from_numpy(np.stack([arr, inv_arr], axis=0))  # (2, H, W)
-```
-
-**设计动机**：
-- 原始深度 $d$：近处变化剧烈、远处平坦，编码器难以均匀感知
-- 逆深度 $1/d$：线性化深度感知，近处精度增强
-- SOTA 方法（CalibNet、RegNet）普遍使用逆深度
-
----
-
-## Step 1: 特征编码 (Feature Encoding)
-
-**代码位置**: `raft_pose.py` → `forward()` (line ~640)
-
-### 1.1 RGB 编码器 (ImageNet 预训练)
-
-**代码位置**: `modules/pose_extractor.py` → `ResNet18Encoder` (line ~300)
-
-```
-输入: image (B, 3, 480, 640)
-  │
-  conv1 (7×7, stride=2)  → 64ch,  240×320    [ImageNet 预训练权重]
-  bn1 + relu
-  │
-  layer1 (2×BasicBlock)  → 64ch,  240×320    [stride=1]
-  layer2 (2×BasicBlock)  → 128ch, 120×160    [stride=2]
-  layer3 (2×BasicBlock)  → 256ch, 60×80      [stride=2]
-  layer4 (2×BasicBlock)  → 512ch, 60×80      [stride=1, 额外细化]
-  │
-  conv_out (1×1)         → 256ch, 60×80
-  InstanceNorm + ReLU
-  │
-输出: fmap_rgb (B, 256, 60, 80)
-```
-
-**特点**：
-- 使用 ImageNet 预训练权重（conv1, bn1, layer1-3），迁移学习
-- 去掉原始 ResNet 的 maxpool，总 stride = 2×1×2×2 = **8**
-- BatchNorm → InstanceNorm，对 batch size 不敏感
-- layer4 是额外添加的细化层（stride=1），不改变分辨率
-
-### 1.2 Depth 编码器 (随机初始化)
-
-**代码位置**: `modules/pose_extractor.py` → `ResNet18Encoder` (line ~300, `in_feat=2`)
-
-```
-输入: depth (B, 2, 480, 640)
-  │
-  conv1 (7×7, stride=2, in=2) → 64ch, 240×320  [随机初始化, 2通道输入]
-  bn1 + relu
-  │
-  layer1 (2×BasicBlock)  → 64ch,  240×320
-  layer2 (2×BasicBlock)  → 128ch, 120×160
-  layer3 (2×BasicBlock)  → 256ch, 60×80
-  layer4 (2×BasicBlock)  → 512ch, 60×80
-  │
-  conv_out (1×1)         → 256ch, 60×80
-  InstanceNorm + ReLU
-  │
-输出: fmap_depth (B, 256, 60, 80)
-```
-
-**特点**：
-- 与 RGB 编码器**相同架构**，但**独立权重**（非 Siamese）
-- 输入 2 通道（depth + inverse depth），conv1 重新初始化
-- 可选：通过 `pretrain_encoder.py` 用对比学习预训练
-
-### 1.3 Context 特征
-
-**代码位置**: `raft_pose.py` → `forward()` (line ~660)
-
-```python
-context_feat = self.context_proj(fmap_depth)  # (B, 64, 60, 80)
-```
-
-```
-fmap_depth (B, 256, 60, 80)
-  │
-  Conv2d(256, 64, 1) + ReLU
-  │
-context_feat (B, 64, 60, 80)
-```
-
-Context 特征提供全局几何上下文，输入给 PoseUpdateNet 的 ConvGRU。
-
----
-
-## Step 2: 特征匹配 (Feature Matching)
-
-**代码位置**: `raft_pose.py` → `initialize_correlation()` (line ~262)
-
-支持两种模式，通过 `--matcher_type` 选择：
-
-### 2.1 CorrBlock 模式 (`matcher_type='corr'`)
-
-**代码位置**: `modules/depth_projection.py` → `CorrBlock` (line ~96)
-
-```
-fmap_depth (B, 256, 60, 80)    fmap_rgb (B, 256, 60, 80)
-        │                              │
-        └────── L2 Normalize ──────────┘
-                       │
-              4D Correlation Volume
-              corr[d_h, d_w, r_h, r_w] = cos_sim(depth[d_h,d_w], rgb[r_h,r_w])
-              shape: (B, 3600, 3600)
-                       │
-              ┌────────┴────────┐
-              │  金字塔下采样     │
-              │  Level 0: 60×80 │
-              │  Level 1: 30×40 │
-              │  Level 2: 15×20 │
-              │  Level 3: 8×10  │
-              └────────┬────────┘
-                       │
-              corr_pyramid (4 levels)
-```
-
-**特点**：
-- 余弦相似度计算，尺度不变
-- 4 层金字塔，支持多尺度匹配
-- 局部窗口采样：radius=4 → 每个位置采样 9×9 邻域
-- 每个样本输出维度：$C_{corr} = (2 \times 4 + 1)^2 \times 4 = 324$
-
-### 2.2 Cross-Attention Matcher 模式 (`matcher_type='attention'`) ⭐ 新增
-
-**代码位置**: `modules/cross_attention_matcher.py` → `CrossAttentionMatcher` (line ~95)
-
-```
-fmap_depth (B, 256, 60, 80)    fmap_rgb (B, 256, 60, 80)
-        │                              │
-   depth_proj                     rgb_proj
-   Conv2d+IN+ReLU                Conv2d+IN+ReLU
-   (256→256)                     (256→256)
-        │                              │
-   + PosEnc2D                    + PosEnc2D
-        │                              │
-   (B, 256, 60, 80)              (B, 256, 60, 80)
-        │                              │
-   reshape → (B, 3600, 256)     reshape → (B, 3600, 256)
-        │                              │
-        │         ┌────────────────────┘
-        │         │  作为 Key & Value
-        │    ┌────┴────────────────────┐
-        │    │  CrossAttentionBlock ×2  │
-        │    │                          │
-        │    │  Q = LayerNorm(depth)    │
-        │    │  K = V = LayerNorm(rgb)  │
-        │    │  MultiHeadAttention(8)   │
-        │    │  + Residual + LayerNorm  │
-        │    │  + FFN(512) + Residual   │
-        │    └────┬────────────────────┘
-        │         │
-        │    attention-enhanced depth
-        │    (B, 3600, 256)
-        │         │
-        │    reshape → (B, 256, 60, 80)
-        │         │
-        │    out_proj
-        │    Conv2d+IN+ReLU
-        │         │
-        └────┬────┘
-             │
-    _attention_features (B, 256, 60, 80)  ← 缓存，后续采样复用
-```
-
-**CrossAttentionBlock 内部结构**：
-
-```
-query (B, 3600, 256)     key_value (B, 3600, 256)
-      │                          │
-  LayerNorm                  LayerNorm
-      │                          │
-      └──── MultiHeadAttention ──┘
-               │ (8 heads, d=32 each)
-          attn_out (B, 3600, 256)
-               │
-      query + attn_out
-               │
-          LayerNorm
-               │
-          + FFN(256→512→256)
-               │
-          LayerNorm
-               │
-          out (B, 3600, 256)
-```
-
-**特点**：
-- **全局感受野**：每个 depth 像素可以 attend 到所有 RGB 像素
-- **可学习匹配**：vs CorrBlock 的固定余弦相似度
-- **LoFTR 风格**：Pre-Norm + 残差连接 + FFN
-- **2D 正弦位置编码**：让 attention 感知空间位置
-- 输出维度：$C_{out} = 256$（vs CorrBlock 的 324）
-- **推理更快**：一次性计算 attention 并缓存，后续采样只需 bilinear interpolation
-
-**PositionalEncoding2D**：
-
-```python
-# 2D 正弦位置编码，分别编码 x 和 y 坐标
-# 前半通道编码 x 方向，后半通道编码 y 方向
-# 频率: 2π/d_model_half, 4π/d_model_half, 8π/d_model_half, ...
-pe[d, h, w] = [sin(w * freq_x), cos(w * freq_x), sin(h * freq_y), cos(h * freq_y), ...]
+fmap_A_1_8, fmap_A_1_4 = image_encoder(image)            # 帧 A
+fmap_B_1_8, fmap_B_1_4 = image_encoder(depth[:, 1:4])    # 帧 B RGB（共享权重）
+# 变量名 fmap_rgb_*=帧A、fmap_depth_*=帧B 沿用旧名，二者现在都是 RGB 外观特征
 ```
 
 ---
 
-## Step 3: 深度投影 (Depth Projection)
-
-**代码位置**: `raft_pose.py` → `sample_correlation_with_poses()` (line ~740)
-**核心模块**: `modules/depth_projection.py` → `DepthProjector` (line ~10)
-
-每一轮迭代中，对每个候选 pose，将深度图投影到 RGB 相机平面。
+## 4. 整体推理流程
 
 ```
-输入:
-  depth_raw (B, 1, 480, 640)     ← 取 Ch 0 (原始深度)
-  pose_samples (B, 37, 4, 4)     ← 37 个候选 pose 矩阵
-  intrinsic_depth (B, 3, 3)
-  intrinsic_rgb (B, 3, 3)
-
-Step 1: 下采样到特征分辨率
-  depth_small = F.interpolate(depth_raw, (60, 80))  → (B, 60, 80)
-  intrinsic *= 1/8  (缩放内参匹配分辨率)
-
-Step 2: 像素坐标反投影到 3D
-  u_d, v_d = meshgrid(80, 60)
-  x_d = (u_d - cx) / fx * depth_small
-  y_d = (v_d - cy) / fy * depth_small
-  z_d = depth_small
-  P_D = stack([x_d, y_d, z_d, 1])  → (B, 4, 60, 80)
-
-Step 3: 用候选 pose 变换到 RGB 坐标系
-  P_C = pose_samples @ P_D  → (B, 37, 4, 60, 80)
-
-Step 4: 投影到 RGB 图像平面
-  u_proj = fx * (X_C / Z_C) + cx
-  v_proj = fy * (Y_C / Z_C) + cy
-  valid = (Z_C > 0.01)  ← 深度有效性检查
-
-输出:
-  projected_coords (B, 37, 2, 60, 80)  ← (u, v) 投影坐标
+1. 共享 encoder 提特征：fmap_A / fmap_B（各 1/8 + 1/4）
+2. context_feat   = context_proj(fmap_B_1_8)              # coarse 用的上下文
+3. 静态相关体     = CorrBlock(fmap_A_1_8, fmap_B_1_8)     # 全对余弦相似度，建一次复用
+4. current_pose   = identity（或 init_pose）
+5. 迭代 num_iterations 次：
+     it < coarse_iters  → Coarse 阶段（1/8，方向假设探测）
+     it ≥ coarse_iters  → Fine 阶段（1/4，特征对齐残差）
+6. 返回 final_pose
 ```
 
-**特点**：
-- 在**特征分辨率** (60×80) 上投影，避免 OOM
-- 37 个 pose **批量矩阵乘法**，无 Python 循环
-- 无效深度（Z_C ≤ 0）坐标推到 -1e4，由下游 valid_mask 过滤
+默认 `num_iterations=6, coarse_iters=3` → **3 次 coarse + 3 次 fine**。两段各自维护一个 ConvGRU hidden state（coarse 在 1/8、fine 在 1/4，分辨率不同故分离）。
 
 ---
 
-## Step 4: 相关性采样 (Correlation Sampling)
+## 5. Coarse 阶段（1/8，方向假设探测）
 
-**代码位置**: `raft_pose.py` → `sample_correlation_with_poses()` (line ~790)
+[raft_pose.py](raft_pose.py) `_single_iteration` + `generate_directional_samples` + `sample_correlation_with_poses`。**目的**：从（可能很差的）初始位姿，靠「假设-检验」拉到正确盆地。
 
-### 4.1 CorrBlock 模式
+1. **生成方向位姿假设**：在当前位姿的 SE(3) 切空间采 ~37 个方向（多轴 × 多尺度 + 单位），每个是一个候选 delta。
+2. **几何投影**：对每个假设，用 `depth[:,0:1]`（帧 B 原始深度）+ 该假设位姿做 `depth_projector`，把帧 B 的 3D 点投影到帧 A 的 **1/8** 特征图坐标。
+3. **相关采样**：在静态 `CorrBlock` 里，于投影坐标的局部邻域（radius=4，4 层金字塔）采样相关 → 每个假设一组相关特征 + 一个置信度。
+4. **置信度聚合**：取置信度 top-K 假设，softmax 加权聚合相关特征与方向编码（coarse_to_fine 分支）。
+5. **ConvGRU 更新**：`pose_update_net(聚合相关, context_feat, hidden_coarse, direction_encoding)` → 6D delta。
+6. **应用 delta**：`_apply_pose_delta`，受 `max_rot_step/max_trans_step`（默认 0.3）裁剪，Rodrigues 转四元数，与当前位姿复合。
 
-```
-projected_coords (B, 37, 2, 60, 80)
-        │
-  对每个样本 n ∈ [0, 36]:
-    centroid = coords[:, n] / scale  (按金字塔层级缩放)
-    local_window = centroid + delta_grid  (9×9 邻域, radius=4)
-    corr_local = bilinear_sample(corr_pyramid, local_window)
-        │
-  拼接 4 个金字塔层级:
-    (B*37, 81, 60, 80) × 4 levels → (B*37, 324, 60, 80)
-
-输出:
-  corr_feats (B*37, 324, 60, 80)
-  confidence (B, 37)  ← top-20% 中心相关值的均值
-```
-
-### 4.2 Cross-Attention 模式
-
-```
-projected_coords (B, 37, 2, 60, 80)
-        │
-  对每个样本 n ∈ [0, 36]:
-    coords_norm = normalize_to[-1, 1](coords[:, n])
-    sampled = grid_sample(_attention_features, coords_norm)
-        │
-  stack all samples:
-    (B, 37, 256, 60, 80) → (B*37, 256, 60, 80)
-
-输出:
-  corr_feats (B*37, 256, 60, 80)
-  confidence (B, 37)  ← 特征范数在有效位置上的均值
-```
-
-### 4.3 Coarse-to-Fine 模式 (`--coarse_to_fine`)
-
-**代码位置**: `modules/depth_projection.py` → `CorrBlock.sample_coarse_then_fine()` (line ~400)
-
-```
-Phase 1 (粗筛): 对全部 37 个样本在最粗金字塔层评估
-  → confidence (B, 37)
-  → topk_indices (B, 3)  ← 选 top-3
-
-Phase 2 (精采): 只对 top-3 做完整多层级采样
-  → corr_feats_topk (B*3, C_corr, 60, 80)
-
-内存: O(B*37) → O(B*3)，节省 ~92% 采样内存
-```
+> `CorrBlock`（[modules/depth_projection.py](modules/depth_projection.py)）是两帧 1/8 特征的**全对余弦相似度**（L2 归一化后点积，尺度无关），构建一次、迭代中复用。
 
 ---
 
-## Step 5: Top-K 聚合 (Confidence Aggregation)
+## 6. Fine 阶段（1/4，动态特征对齐残差）
 
-**代码位置**: `raft_pose.py` → `_single_iteration()` (line ~490)
+[raft_pose.py](raft_pose.py) `_single_iteration_fine`。**目的**：coarse 收敛到盆地后，在更高分辨率做局部精修。
 
-```
-corr_feats (B*K, C_corr, 60, 80)    confidence (B, K)
-        │                                    │
-  reshape → (B, K, C_corr, 60, 80)          │
-        │                                    │
-  topk_weights = softmax(confidence, dim=1)  → (B, K)
-        │
-  weighted_feats = Σ_k (weight_k × feat_k)  → (B, C_corr, 60, 80)
-        │
-  direction_encoding = Σ_k (weight_k × dir_k)  → (B, 6)
-        │
-aggregated_corr (B, C_corr, 60, 80)
-direction_encoding (B, 6)  ← [rot_axis(3), trans_dir(3)]
-```
+1. **1/4 投影**：用当前位姿把帧 B 深度（`depth[:,0:1]`）投影到帧 A 的 **1/4** 坐标 `coords_1_4`（B→A）。
+2. **Warp 帧 A 特征到帧 B 网格**（关键修正）：`fmap_A_warped = grid_sample(fmap_A_1_4, grid)`，`grid` 由 `coords_1_4` 归一化 → `fmap_A_warped[p_B] = fmap_A[g(p_B)]` = 点 P（帧 B 像素 p_B 的 3D 点）在帧 A 的特征。
+3. **残差**：`feat_diff = (fmap_B_1_4 − fmap_A_warped) * valid_mask`。
+   - 同一个 3D 点 P 在两帧的 RGB 外观特征之差；**位姿正确时趋于 0**（Stage 1 RGB↔RGB 修复后恢复判别性的关键）。
+   - `valid_mask`：投影出界的像素（无对应关系）置零，消除 `grid_sample` zero-padding 的伪残差。
+4. **相似度图**：`similarity = cosine(fmap_A_1_4, fmap_A_warped) * valid_mask`（辅助信号）。
+5. **投影聚合**：`feat_diff → fine_feat_proj`、`similarity → fine_sim_proj`，拼接后 `fine_corr_proj` → `align_corr`（保持 1/4，不降采样，保精度）。
+6. **Fine 更新**：`context_1_4 = context_proj_1_4(fmap_B_1_4)`；`fine_update_net(align_corr, context_1_4, hidden_fine)` → 6D delta（独立 PoseUpdateNet + 独立 1/4 hidden state）。
+7. **应用 delta**：`_apply_pose_delta`，受 `max_rot_step_fine/max_trans_step_fine`（默认 0.05，真 fine 步长）裁剪。
 
-**设计动机**：
-- 不是只选最好的 1 个样本，而是**加权融合 top-K**
-- 权重由 softmax(confidence) 决定，高置信度样本贡献更大
-- direction_encoding 告诉网络"这些特征来自哪个方向"，辅助 pose 预测
+> Fine 用**直接残差**而非相关体（避免 1/4 全对相关的高显存）。RGB↔RGB 下残差重新带上位姿信号。
 
 ---
 
-## Step 6: 姿态更新网络 (Pose Update Network)
+## 7. 位姿表示与更新
 
-**代码位置**: `modules/pose_update.py` → `PoseUpdateNet` (line ~200)
+[modules/pose_utils.py](modules/pose_utils.py) + [raft_pose.py](raft_pose.py) `_apply_pose_delta`。
 
-```
-输入:
-  aggregated_corr (B, C_corr, 60, 80)     ← 聚合后的相关性特征
-  context_feat (B, 64, 60, 80)            ← 编码器上下文特征
-  hidden_state (B, 128, 60, 80) or None   ← ConvGRU 隐藏状态
-  direction_encoding (B, 6)               ← 方向编码
-
-Step 1: 特征投影
-  corr_proj = corr_proj_net(aggregated_corr)     → (B, 128, 60, 80)
-    Conv2d(C_corr, 128, 1) + ReLU
-    Conv2d(128, 128, 3) + ReLU
-
-  context_proj = context_proj_net(context_feat)  → (B, 128, 60, 80)
-    Conv2d(64, 128, 1) + ReLU
-
-  dir_feat = dir_proj(direction_encoding)        → (B, 128, 1, 1) → broadcast
-    Linear(6, 128) + ReLU
-
-Step 2: ConvGRU 更新
-  if hidden_state is None:
-    hidden_state = init_h(context_feat)  → (B, 128, 60, 80)
-      Conv2d(64, 128, 3) + ReLU + Conv2d(128, 128, 3) + ReLU
-
-  hidden_state = ConvGRU(hidden_state, corr_proj + context_proj + dir_feat)
-    z = σ(Conv([h; x]))     ← 更新门
-    r = σ(Conv([h; x]))     ← 重置门
-    q = tanh(Conv([r⊙h; x])) ← 候选状态
-    h_new = (1-z)⊙h + z⊙q
-
-Step 3: Pose 回归头
-  pose_delta = PoseRegressionHead(hidden_state)
-    3× ResidualBlock(128, 128)
-    Conv2d(128, 6, 3)  ← 零初始化 (×0.01)
-
-输出:
-  pose_delta (B, 6, 60, 80)     ← [rx, ry, rz, tx, ty, tz]
-  hidden_state (B, 128, 60, 80) ← 传递给下一轮迭代
-```
-
-**PoseRegressionHead 零初始化**：
-- `pose_conv.weight *= 0.01`，`pose_conv.bias = 0`
-- 未训练时输出接近零 → identity delta → 不破坏初始 pose
-- 小随机初始化（而非严格零）保证梯度可以流动
+- **表示**：单位四元数 q（旋转）+ 平移 t（米）。
+- **delta**：6D → rot_vec（3）+ dt（3）。rot_vec 经 Rodrigues 转增量四元数 dq。
+- **复合**（camera frame，右乘）：`T_new = T_cur · Δ`，即 `q_new = q ⊗ dq`，`t_new = t + R(q)·dt`。
+- **步长裁剪**：rot_vec 与 dt 各自 clamp 到 `±max_*_step`，防发散；旋转幅度超限时按角度缩放（可微）。
 
 ---
 
-## Step 7: 姿态更新 (Pose Update via SE(3))
+## 8. 训练损失（简）
 
-**代码位置**: `raft_pose.py` → `_single_iteration()` (line ~560)
-
-```
-pose_delta (B, 6, 60, 80)
-        │
-  spatial mean pooling
-        │
-  pose_delta_avg (B, 6)  ← [rx, ry, rz, tx, ty, tz]
-        │
-  ┌─────┴─────┐
-  │           │
-rot_vec     dt
-(B, 3)      (B, 3)
-  │           │
-  │     clamp(-max_trans, max_trans)
-  │           │
-  │     dt (B, 3)  ← 平移增量 (米)
-  │
-  clamp(-max_rot, max_rot)
-  │
-  Rodrigues → quaternion delta
-  angle = ‖rot_vec‖
-  dq = [cos(θ/2), sinc(θ/2) · rot_vec/2]
-  dq = normalize(dq)
-  │
-  dq (B, 4)  ← 旋转增量 (四元数)
-        │
-  SE(3) 组合: T_new = T_cur ⊗ Δ
-  q_new = qmul(q_cur, dq)
-  t_new = t_cur + qrot(q_cur, dt)
-  q_new = normalize(q_new)
-        │
-  current_pose (B, 7)  ← [qw, qx, qy, qz, tx, ty, tz]
-```
-
-**关键设计**：
-- **max_rot_step / max_trans_step**：限制每步最大修正量，防止发散
-- **Rodrigues 公式**：旋转向量 → 四元数，完全可微
-- **sinc 的 Taylor 展开**：$\theta \to 0$ 时 $\text{sinc}(\theta) \to 1$，避免 0/0
-- **SE(3) 组合**：$T_{new} = T_{cur} \times \Delta$，在李群上更新保证合法性
+[train.py](train.py) + [pose_loss.py](pose_loss.py)。
+- **Sequence loss**：对每次迭代的位姿都算误差，按 `seq_loss_gamma`（默认 0.8）递减加权——鼓励逐步收敛。
+- **位姿误差**：旋转用测地距离（GeodesicRotationLoss）、平移用 L2（TranslationLoss），分别乘 `rot_weight / trans_weight`（默认 100/100）。
+- **Delta 监督**（`delta_loss_weight=1.0`）：直接监督每次迭代预测的 delta 接近「当前位姿到 GT 的剩余增量」。
+- **Curriculum**：初始位姿加噪声从大到小（`curriculum_start/end/warmup`），逐步逼近真实分布。
 
 ---
 
-## Step 8: 迭代优化 (Iterative Refinement)
+## 9. 关键设计决策（为什么这么做）
 
-**代码位置**: `raft_pose.py` → `forward()` (line ~680)
-
-```
-for it in range(num_iterations):  # 默认 12 轮
-    current_pose, hidden_state, rot_vec, dt = _single_iteration(
-        current_pose, hidden_state, depth, intrinsic_depth, intrinsic_rgb, context_feat
-    )
-```
-
-**每轮迭代流程**：
-
-```
-current_pose (B, 7)
-      │
-  ┌───┴───────────────────────────────────────────┐
-  │ 1. generate_directional_samples               │
-  │    12 方向 × 3 尺度 + 1 恒等 = 37 个候选 pose  │
-  │    → pose_samples (B, 37, 4, 4)               │
-  │                                               │
-  │ 2. sample_correlation_with_poses              │
-  │    深度投影 + 特征采样                          │
-  │    → corr_feats (B*K, C_corr, 60, 80)         │
-  │    → confidence (B, 37)                        │
-  │                                               │
-  │ 3. Top-K 加权聚合                              │
-  │    → aggregated_corr (B, C_corr, 60, 80)      │
-  │    → direction_encoding (B, 6)                 │
-  │                                               │
-  │ 4. PoseUpdateNet                              │
-  │    ConvGRU + PoseRegressionHead                │
-  │    → pose_delta (B, 6, 60, 80)                │
-  │    → hidden_state (B, 128, 60, 80)            │
-  │                                               │
-  │ 5. SE(3) 姿态更新                              │
-  │    → current_pose (B, 7)                       │
-  └───────────────────────────────────────────────┘
-      │
-  (重复 12 轮)
-      │
-final_pose (B, 7)
-```
-
-### 方向采样策略
-
-**代码位置**: `raft_pose.py` → `generate_directional_samples()` (line ~283)
-
-```
-12 个方向:
-  ±Tx, ±Ty, ±Tz     ← 6 个平移方向
-  ±Rx, ±Ry, ±Rz     ← 6 个旋转方向
-
-3 个尺度: 0.25, 1.0, 4.0
-
-12 × 3 = 36 个扰动 + 1 个恒等 = 37 个候选 pose
-
-方向编码 (6D):
-  [rot_axis_x, rot_axis_y, rot_axis_z, trans_dir_x, trans_dir_y, trans_dir_z]
-  恒等样本: [0, 0, 0, 0, 0, 0]
-```
-
-**预计算优化**：方向模板在 `__init__` 中注册为 buffer，每轮迭代只计算 scale-dependent 的四元数扰动，避免 ~100 次张量分配。
-
-### 梯度检查点 (Gradient Checkpointing)
-
-```python
-if self.use_checkpoint:
-    current_pose, hidden_state, rot_vec, dt = torch_checkpoint(
-        self._single_iteration, ...
-    )
-```
-
-- 前向传播后丢弃中间激活
-- 反向传播时重新计算
-- 内存：$O(K) \to O(1)$，时间增加 ~20%
+| 决策 | 原因 |
+|------|------|
+| **共享 RGB encoder（RGB↔RGB 匹配）** | 旧版用独立 depth_encoder 编码深度图，造成「外观 vs 几何」跨模态，局部相关平坦、fine 阶段失效。两帧都用 RGB 外观 → 同模态匹配，判别性恢复。 |
+| **深度不进 encoder，只做投影** | 深度的本职是几何（决定相关在哪采），不是外观匹配。解耦后职责清晰：RGB=「匹配什么」，深度=「在哪采」。 |
+| **Coarse 用方向假设探测** | 从差初值出发，单点局部相关不够；多假设 + 置信度聚合能全局定位到正确盆地。 |
+| **Fine 用 1/4 直接残差** | coarse 收敛后残差小、落在 1/4 局部盆地内；更高分辨率提升平移精度。 |
+| **两段独立 hidden state** | coarse(1/8) 与 fine(1/4) 分辨率不同，ConvGRU hidden 不能跨分辨率复用。 |
 
 ---
 
-## 11. 损失函数
+## 10. 文件地图
 
-**代码位置**: `raft_pose.py` → `compute_loss()` (line ~830), `train.py` → `train_one_epoch()`
-
-### 序列损失 (Sequence Loss)
-
-```python
-# 对每一轮迭代的中间 pose 都计算损失
-for it in range(num_iterations):
-    pred_pose_it = pose_sequence[it + 1]  # 第 it 轮后的 pose
-    loss_it = rotation_loss(pred_pose_it, gt_pose) + translation_loss(pred_pose_it, gt_pose)
-    # 指数加权: 后期迭代权重更大
-    weight = gamma ** (num_iterations - 1 - it)  # gamma=0.8
-    total_loss += weight * loss_it
-```
-
-### 旋转损失
-
-```python
-# 四元数测地线距离 → 角度误差 (度)
-rot_error = 2 * arccos(|q_pred · q_gt|) * (180 / π)  # (B,)
-loss_rot = rot_error.mean() * rot_weight  # rot_weight=100
-```
-
-### 平移损失
-
-```python
-trans_error = ‖t_pred - t_gt‖₂  # (B,)
-loss_trans = trans_error.mean() * trans_weight  # trans_weight=20
-```
-
-### Delta 监督损失 (可选)
-
-```python
-# 直接监督预测的 (rot_vec, dt) 与真实 delta 的差距
-loss_delta = ‖pred_delta - gt_delta‖₂ * delta_loss_weight
-```
-
-### 课程学习 (Curriculum Learning)
-
-```python
-# 训练初期: 小噪声 (模型从 GT 附近开始)
-# 训练后期: 大噪声 (模型学会处理大误差)
-noise_std = curriculum_start + (curriculum_end - curriculum_start) * progress
-# progress 在前 80% epoch 从 0 线性增长到 1
-```
+| 文件 | 作用 |
+|------|------|
+| [raft_pose.py](raft_pose.py) | 主模型：encoder 调用、coarse/fine 迭代、位姿更新、forward |
+| [modules/pose_extractor.py](modules/pose_extractor.py) | `ResNet18Encoder`（多尺度 1/8+1/4）、`BasicEncoder` 等 |
+| [modules/depth_projection.py](modules/depth_projection.py) | `DepthProjector`（3D 点投影）、`CorrBlock`（全对相关 + 邻域采样） |
+| [modules/pose_update.py](modules/pose_update.py) | `PoseUpdateNet`（corr/context/dir 投影 + ConvGRU + 位姿回归头） |
+| [modules/pose_utils.py](modules/pose_utils.py) | 四元数运算、位姿复合、误差计算 |
+| [dataloader.py](dataloader.py) | 训练 `SevenScenesDataset`：产 `image`(RGB)、`depth`([raw,R,G,B])、`gt_pose` |
+| [evalute_benchmark.py](evalute_benchmark.py) | 评测 `BenchmarkDataset`（同格式）+ benchmark 引擎 |
+| [train.py](train.py) | 训练循环（curriculum、sequence loss、delta 监督、freeze encoder） |
 
 ---
 
-## 12. 参数量统计
+## 11. 关键配置参数
 
-| 模块 | 参数量 | 说明 |
-|------|--------|------|
-| RGB Encoder (ResNet18) | ~11.2M | ImageNet 预训练 |
-| Depth Encoder (ResNet18) | ~11.2M | 随机初始化, 2ch 输入 |
-| Context Projection | ~16.5K | Conv2d(256→64, 1) |
-| CrossAttentionMatcher | ~1.3M | 2× CrossAttnBlock + proj |
-| CorrBlock | 0 | 无可学习参数 |
-| PoseUpdateNet | ~1.1M | ConvGRU + PoseHead |
-| **总计 (attention)** | **~24.8M** | |
-| **总计 (corr)** | **~23.5M** | |
-
-### 推理速度对比 (B=2, 12 iter, 480×640)
-
-| Matcher | 推理时间 | 相对速度 |
-|---------|---------|---------|
-| CorrBlock | 328.8 ms | 1.00× |
-| CrossAttention | 176.8 ms | **0.54×** (快 46%) |
+| 参数 | 默认 | 含义 |
+|------|------|------|
+| `image_encoder` | resnet18 | 共享 encoder 类型 |
+| `num_iterations` | 6 | 总迭代数 |
+| `coarse_iters` | 3 | 前 N 次走 coarse；设成 `num_iterations` 即关闭 fine |
+| `hidden_dim / context_dim` | 128 / 64 | ConvGRU hidden / context 通道 |
+| `corr_levels / corr_radius` | 4 / 4 | 相关金字塔层数 / 邻域半径 |
+| `max_rot_step / max_trans_step` | 0.3 / 0.3 | coarse 每步位姿裁剪 |
+| `max_rot_step_fine / max_trans_step_fine` | 0.05 / 0.05 | fine 每步裁剪 |
+| `rot_weight / trans_weight` | 100 / 100 | loss 中旋转/平移权重 |
+| `freeze_encoder_epochs` | 10 | 前 N epoch 冻结 encoder，让更新头先适应 |
 
 ---
 
-## 文件索引
+## 12. 参数量（Stage 1）
 
-| 文件 | 核心内容 |
-|------|---------|
-| `raft_pose.py` | RAFTPose 主模型、迭代优化循环、pose 采样 |
-| `modules/pose_extractor.py` | ResNet18Encoder, BasicEncoder, DepthEncoder |
-| `modules/depth_projection.py` | CorrBlock (4D 相关体积), DepthProjector |
-| `modules/cross_attention_matcher.py` | CrossAttentionMatcher, PositionalEncoding2D |
-| `modules/pose_update.py` | PoseUpdateNet, ConvGRU, PoseRegressionHead |
-| `modules/pose_utils.py` | 四元数运算、pose 组合、误差计算 |
-| `dataloader.py` | 7Scenes 数据加载、双通道 depth |
-| `train.py` | 训练循环、序列损失、课程学习 |
-| `pretrain_encoder.py` | 对比学习预训练 encoder |
+- 单共享 ResNet18 encoder ≈ 11M；`pose_update_net`（coarse）+ `fine_update_net`（fine）+ 各 proj 层 ≈ 5M。
+- **总 ≈ 16M**（相比旧版双 encoder ~25M 下降，因为去掉独立 depth_encoder、两帧共用一套权重）。

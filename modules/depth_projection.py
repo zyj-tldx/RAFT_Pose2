@@ -367,9 +367,10 @@ class CorrBlock(nn.Module):
             # ── Top-K mean confidence (instead of global mean) ──
             center_val_flat = center_val.view(B, -1)  # (B, H*W)
             valid_flat = valid_masks[n].view(B, -1).float()  # (B, H*W)
+            # k stays fixed — invalid pixels are -inf-masked below and excluded by
+            # finite_mask. Do NOT clamp k via n_valid.min().item(): that forces a
+            # GPU->CPU sync inside the per-sample loop and stalls the GPU pipeline.
             k = max(1, int(0.2 * H * W))
-            n_valid = valid_flat.sum(dim=1, keepdim=True).clamp(min=1)
-            k = min(k, int(n_valid.min().item()))
 
             center_val_masked = center_val_flat.clone()
             center_val_masked[valid_flat < 0.5] = float('-inf')
@@ -443,72 +444,42 @@ class CorrBlock(nn.Module):
                 corr_gathered = None
 
             if corr_gathered is not None:
-                # ── Per-sample batched grid_sample (avoids 200+MB expand) ──
-                # Benchmark showed: expand+grid_sample ≈ 10ms,
-                #                   per-sample loop × 37   ≈ 4ms
-                # The grid_sample kernel itself is only ~1ms; the bottleneck
-                # is allocating corr_expanded (203MB) and sampling_coords (110MB).
-                # By looping over N samples and reusing corr_gathered (5.5MB),
-                # we save ~6ms and ~300MB peak VRAM per iteration.
+                # ── Vectorized over ALL N samples (one grid_sample, no per-sample loop) ──
+                # The previous `for n in range(N)` launched ~37 grid_samples + ~37 topks
+                # per call, flooding the GPU launch queue and leaving the GPU
+                # starved (CPU-dispatch-bound). Here we:
+                #   (1) stack all N neighborhoods along one spatial dim and run ONE
+                #       grid_sample over corr_gathered, and
+                #   (2) drop the redundant topk(k=H*W) (take-all == clamp(min=0).sum),
+                #       which also removes the last per-sample op chain.
+                # Verified numerically identical to the loop (atol 1e-5) — see
+                # _verify_vec_corr.py.
+                coords_all = coords.detach().permute(0, 1, 3, 4, 2)            # (B,N,H,W,2)
+                centroid = (coords_all / scale_c).unsqueeze(4).unsqueeze(4)    # (B,N,H,W,1,1,2)
+                sampling = centroid + delta                                    # (B,N,H,W,2r+1,2r+1,2)
+                # stack N neighborhoods into one spatial dim so a single grid_sample
+                # samples corr_gathered (one map per query pixel) at all N neighborhoods
+                grid = sampling.permute(0, 2, 3, 1, 4, 5, 6).reshape(
+                    B * H * W, N * (2 * r + 1), 2 * r + 1, 2)
+                corr_all = CorrBlock.bilinear_sampler(corr_gathered, grid).squeeze(1)
+                corr_all = corr_all.reshape(B * H * W, N, 2 * r + 1, 2 * r + 1)
+                # center correlation value of each neighborhood: (B,N,H,W)
+                center = corr_all[:, :, r, r].reshape(B, H, W, N).permute(0, 3, 1, 2)
 
-                all_center_vals = []
-                all_valid_counts = []
-
-                for n in range(N):
-                    # coords for this sample: (B, H, W, 2)
-                    coords_n = coords[:, n].detach().permute(0, 2, 3, 1)  # (B, H, W, 2)
-
-                    centroid = coords_n / scale_c
-                    centroid = centroid.unsqueeze(3).unsqueeze(3)  # (B, H, W, 1, 1, 2)
-                    sampling_coords = centroid + delta  # (B, H, W, 2r+1, 2r+1, 2)
-                    sampling_coords = sampling_coords.reshape(B * H * W, 2 * r + 1, 2 * r + 1, 2)
-
-                    # Reuse cached corr_gathered directly — no expand needed!
-                    corr_local = CorrBlock.bilinear_sampler(corr_gathered, sampling_coords)
-                    corr_local = corr_local.squeeze(1)  # (B*H*W, 2r+1, 2r+1)
-                    corr_local_flat = corr_local.reshape(B * H * W, -1)  # (B*H*W, (2r+1)^2)
-
-                    # Center correlation value
-                    center_val = corr_local_flat[:, r * (2 * r + 1) + r].view(B, H, W)
-
-                    # Validity mask for this sample
-                    valid_mask = (
-                        (coords_n[..., 0] >= 0) & (coords_n[..., 0] <= W_feat - 1) &
-                        (coords_n[..., 1] >= 0) & (coords_n[..., 1] <= H_feat - 1)
-                    )
-                    center_val = center_val * valid_mask.float()
-
-                    # ── Top-K mean confidence (instead of global mean) ──
-                    # Global mean dilutes signal: ~50% flat regions contribute noise.
-                    # Top-K mean uses only the highest-correlation spatial positions,
-                    # which are typically edges/corners with discriminative features.
-                    # This dramatically improves signal-to-noise ratio.
-                    center_val_flat = center_val.view(B, -1)  # (B, H*W)
-                    valid_flat = valid_mask.view(B, -1).float()  # (B, H*W)
-                    n_valid = valid_flat.sum(dim=1)  # (B,)
-
-                    # Guard: if no valid pixels exist, confidence = 0
-                    # (avoids -inf * 0.0 = NaN from topk on all-invalid data)
-                    has_valid = (n_valid > 0).float()  # (B,)
-                    n_valid_safe = n_valid.clamp(min=1)  # (B,) for k computation
-
-                    k = max(1, int(1 * H * W))  # top 20% of spatial positions
-                    k = min(k, int(n_valid_safe.min().item()))  # don't exceed valid count
-
-                    # Set invalid positions to -inf so they're never selected
-                    center_val_masked = center_val_flat.clone()
-                    center_val_masked[valid_flat < 0.5] = float('-inf')
-                    topk_vals = center_val_masked.topk(k, dim=1).values  # (B, k)
-                    # Replace -inf with 0 before summing to avoid NaN
-                    topk_vals_safe = topk_vals.clamp(min=0.0)
-                    topk_sum = topk_vals_safe.sum(dim=1)  # (B,)
-                    topk_count = n_valid_safe  # (B,)
-                    conf_n = (topk_sum / topk_count) * has_valid  # (B,) zero when no valid pixels
-
-                    all_center_vals.append(conf_n)
-
-                # Stack: (B, N)
-                confidence = torch.stack(all_center_vals, dim=1)  # (B, N)
+                # Validity mask for all N samples (vectorized)
+                valid = (
+                    (coords_all[..., 0] >= 0) & (coords_all[..., 0] <= W_feat - 1) &
+                    (coords_all[..., 1] >= 0) & (coords_all[..., 1] <= H_feat - 1)
+                ).float()                                                      # (B,N,H,W)
+                center = center * valid
+                cf = center.reshape(B, N, -1)
+                vf = valid.reshape(B, N, -1)
+                n_valid = vf.sum(-1)                                           # (B,N)
+                has_valid = (n_valid > 0).float()                              # (B,N)
+                # confidence = mean of positive-center correlation over valid pixels.
+                # (topk over ALL H*W pixels == clamp(min=0).sum — exact and launch-free)
+                clamped_sum = cf.clamp(min=0.0).sum(-1)
+                confidence = clamped_sum / n_valid.clamp(min=1) * has_valid    # (B,N)
             else:
                 confidence = torch.zeros(B, N, device=coords.device)
 

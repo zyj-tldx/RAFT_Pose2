@@ -70,6 +70,9 @@ class RAFTPose(nn.Module):
         matcher_blocks=2,
         matcher_ffn_dim=512,
         matcher_dropout=0.1,
+        coarse_iters=3,
+        max_rot_step_fine=0.05,
+        max_trans_step_fine=0.05,
     ):
         """
         Args:
@@ -159,7 +162,13 @@ class RAFTPose(nn.Module):
         self.use_amp = use_amp
         self.coarse_to_fine = coarse_to_fine
         
-        # Image feature encoder
+        # ── Single shared RGB encoder for BOTH frames (true Siamese, weight-shared) ──
+        # Matching is RGB<->RGB appearance (discriminative via learned edges/texture),
+        # which fixes the cross-modality gap of encoding a depth MAP separately.
+        # Frame B's depth is NOT encoded — it is used only for geometric projection
+        # (depth_projector samples correlation at depth-projected locations).
+        # 'depth' tensor is (B, 4, H, W) = [raw_depth, R, G, B]; ch1:4 (frame B RGB)
+        # feeds this same encoder; ch0 feeds depth_projector.
         if image_encoder == 'basic':
             self.image_encoder = BasicEncoder(output_dim=256, norm_fn='instance', dropout=0.1,
                                               use_checkpoint=use_checkpoint)
@@ -174,46 +183,11 @@ class RAFTPose(nn.Module):
             self.fmap_dim = 256
         else:
             raise ValueError(f"Unknown image encoder: {image_encoder}")
-        
-        if shared_encoder:
-            # Dual encoder mode: two independent ResNet18 (same architecture)
-            # RGB encoder uses ImageNet pretrained weights
-            # Depth encoder uses random init (2-channel input: depth + inverse depth)
-            if image_encoder == 'resnet18':
-                self.image_encoder = ResNet18Encoder(output_dim=256, norm_fn='instance', dropout=0.1,
-                                                     pretrained=True, use_checkpoint=use_checkpoint)
-                self.depth_encoder = ResNet18Encoder(output_dim=256, norm_fn='instance', dropout=0.1,
-                                                     pretrained=False, in_feat=2, use_checkpoint=use_checkpoint)
-                self.fmap_dim = 256
-            elif image_encoder == 'basic':
-                self.image_encoder = BasicEncoder(output_dim=256, norm_fn='instance', dropout=0.1,
-                                                  use_checkpoint=use_checkpoint)
-                self.depth_encoder = BasicEncoder(output_dim=256, norm_fn='instance', dropout=0.1,
-                                                  in_feat=2, use_checkpoint=use_checkpoint)
-                self.fmap_dim = 256
-            else:
-                raise ValueError(f"shared_encoder not supported for '{image_encoder}'")
-            self.depth_feat_align = None
-        else:
-            # Original mode: separate depth encoder + alignment layer
-            self.depth_encoder = DepthEncoder(
-                output_dim=depth_dim,
-                fourier_levels=-1,
-                use_checkpoint=use_checkpoint
-            )
-            # Feature alignment layer: align depth features to match RGB feature dimension
-            self.depth_feat_align = nn.Sequential(
-                nn.Conv2d(depth_dim, 64, 3, padding=1),
-                nn.InstanceNorm2d(64),
-                nn.ReLU(inplace=True),
-                nn.Conv2d(64, 128, 3, padding=1),
-                nn.InstanceNorm2d(128),
-                nn.ReLU(inplace=True),
-                nn.Conv2d(128, self.fmap_dim, 3, padding=1),
-                nn.InstanceNorm2d(self.fmap_dim),
-                nn.ReLU(inplace=True),
-            )
-        
+        # No separate depth encoder, no feature alignment (both frames are RGB).
+        self.depth_feat_align = None
+        # shared_encoder flag retained for backward-compat (forward keys on it);
+        # it is effectively always True now.
+        self.shared_encoder = True
         # Context feature projector
         if shared_encoder:
             # Context from depth features (same dim as fmap_dim)
@@ -269,6 +243,47 @@ class RAFTPose(nn.Module):
         
         # Depth projector for batch pose projection
         self.depth_projector = DepthProjector()
+
+        # ── Fine refinement stage (1/4 resolution dynamic alignment) ────────
+        # Number of coarse iterations; remaining iterations use fine stage
+        self.coarse_iters = min(coarse_iters, num_iterations)
+        if self.coarse_iters < num_iterations:
+            # Residual feature projection: fmap_dim → hidden_dim
+            self.fine_feat_proj = nn.Sequential(
+                nn.Conv2d(self.fmap_dim, hidden_dim, 1),
+                nn.InstanceNorm2d(hidden_dim),
+                nn.ReLU(inplace=True),
+                nn.Conv2d(hidden_dim, hidden_dim, 3, 1, 1),
+                nn.InstanceNorm2d(hidden_dim),
+                nn.ReLU(inplace=True),
+            )
+            # Similarity score projection: 1 → hidden_dim
+            self.fine_sim_proj = nn.Sequential(
+                nn.Conv2d(1, hidden_dim, 1),
+                nn.ReLU(inplace=True),
+            )
+            # Merge projection: 2*hidden_dim → per_sample_corr_dim
+            self.fine_corr_proj = nn.Sequential(
+                nn.Conv2d(2 * hidden_dim, self.per_sample_corr_dim, 1),
+                nn.ReLU(inplace=True),
+            )
+            # 1/4 context projection (mirrors context_proj, fmap_dim→context_dim)
+            self.context_proj_1_4 = nn.Sequential(
+                nn.Conv2d(self.fmap_dim, context_dim, 1),
+                nn.ReLU(inplace=True),
+            )
+            # Dedicated 1/4 fine update network (resolution-agnostic PoseUpdateNet).
+            # Separate from pose_update_net so the fine stage keeps its own 1/4
+            # hidden state and learns small-step behaviour independently.
+            self.fine_update_net = PoseUpdateNet(
+                hidden_dim=hidden_dim,
+                corr_dim=self.per_sample_corr_dim,
+                context_dim=context_dim,
+                num_layers=3,
+            )
+            # Genuinely fine per-iteration step limits (configurable)
+            self.max_rot_step_fine = max_rot_step_fine
+            self.max_trans_step_fine = max_trans_step_fine
     
     def initialize_correlation(self, fmap_rgb, fmap_depth):
         """
@@ -585,33 +600,55 @@ class RAFTPose(nn.Module):
             direction_encoding=direction_encoding
         )  # pose_delta: (B, 6, H, W)
 
+        # Apply predicted delta to current pose
+        current_pose, rot_vec, dt = self._apply_pose_delta(
+            current_pose, pose_delta,
+            max_rot_step=self.max_rot_step,
+            max_trans_step=self.max_trans_step,
+        )
+
+        return current_pose, hidden_state, rot_vec, dt
+
+    def _apply_pose_delta(self, current_pose, pose_delta, max_rot_step, max_trans_step):
+        """
+        Convert predicted 6D delta map to pose update via Rodrigues + quaternion compose.
+
+        Shared by both coarse and fine iteration stages.
+
+        Args:
+            current_pose: (B, 7) current pose estimate
+            pose_delta: (B, 6, H, W) predicted delta field
+            max_rot_step: max rotation step per iteration (radians)
+            max_trans_step: max translation step per iteration (meters)
+
+        Returns:
+            current_pose: (B, 7) updated pose
+            rot_vec: (B, 3) raw rotation vector (before Rodrigues)
+            dt: (B, 3) translation delta
+        """
         # Aggregate pose delta predictions (spatial pooling)
         pose_delta_avg = pose_delta.mean(dim=[2, 3])  # (B, 6)
 
-        # Convert rotation vector (rx, ry, rz) to quaternion delta
         rot_vec = pose_delta_avg[:, :3]  # (B, 3)
         dt = pose_delta_avg[:, 3:6]      # (B, 3)
 
-        # Clamp magnitudes to prevent divergence across iterations
-        # rot_vec clamp: 0.3 rad ≈ 17° per iteration max step
-        # Lower clamp prevents overshooting, especially for discriminative encoders
-        rot_vec = rot_vec.clamp(-self.max_rot_step, self.max_rot_step)
-        dt = dt.clamp(-self.max_trans_step, self.max_trans_step)
+        # Clamp magnitudes to prevent divergence
+        rot_vec = rot_vec.clamp(-max_rot_step, max_rot_step)
+        dt = dt.clamp(-max_trans_step, max_trans_step)
 
         # Rodrigues' formula: rotation vector → quaternion (fully differentiable)
         angle = rot_vec.norm(dim=1, keepdim=True).clamp(min=1e-8)  # (B, 1)
-        scale = (angle.clamp(max=self.max_rot_step) / angle).detach()  # (B, 1)
+        scale = (angle.clamp(max=max_rot_step) / angle).detach()  # (B, 1)
         rot_vec_scaled = rot_vec * scale  # (B, 3)
 
         half_angle = rot_vec_scaled.norm(dim=1, keepdim=True).clamp(min=1e-8) / 2.0  # (B, 1)
         cos_ha = torch.cos(half_angle)  # (B, 1)
-        # Use Taylor expansion for sinc near zero to avoid 0/0
         small_ha = (half_angle.abs() < 1e-4)
         sinc_factor = torch.where(
             small_ha,
             torch.ones_like(half_angle),
             torch.sin(half_angle) / half_angle
-        )  # (B, 1), →1 as half_angle→0
+        )
         dq = torch.cat([cos_ha, sinc_factor * rot_vec_scaled / 2.0], dim=1)  # (B, 4)
         dq = F.normalize(dq, dim=1)
 
@@ -619,35 +656,141 @@ class RAFTPose(nn.Module):
         q_cur, t_cur = current_pose[:, :4], current_pose[:, 4:7]
         q_new, t_new = apply_pose_update((q_cur, t_cur), (dq, dt))
         q_new = F.normalize(q_new, dim=1)
-        # Guard against degenerate quaternion (F.normalize on zero vector → NaN)
         q_norm = q_new.norm(dim=1, keepdim=True).clamp(min=1e-8)
         q_new = q_new / q_norm
         current_pose = torch.cat([q_new, t_new], dim=1)  # (B, 7)
 
-        return current_pose, hidden_state, rot_vec, dt
+        return current_pose, rot_vec, dt
+
+    def _single_iteration_fine(self, current_pose, hidden_state_fine, depth,
+                               intrinsic_depth, intrinsic_rgb):
+        """
+        Fine refinement iteration: 1/4 resolution dynamic feature alignment.
+
+        With only frame-A depth + the forward projection g(p_d)=p_rgb
+        available (no frame-B depth → no inverse map), the geometrically
+        correct grid_sample warp is to pull RGB features BACK onto the
+        depth (frame-A) grid: grid_sample(fmap_rgb, grid)[p_d] = fmap_rgb[g(p_d)]
+        = feature of point P (at depth pixel p_d) as seen in the RGB frame.
+        The residual fmap_depth[p_d] − fmap_rgb_warped[p_d] then compares the
+        same 3D point across the two frames and vanishes at the correct pose.
+
+        Runs the update at 1/4 resolution (dedicated fine_update_net + its own
+        1/4 hidden state), preserving the 4× spatial precision. No directional
+        sampling — direct residual signal. Genuinely small step limits.
+        """
+        batch_size = current_pose.shape[0]
+        device = current_pose.device
+
+        # ── 1. Depth projection at 1/4 resolution ────────────────────────
+        _, _, H_orig, W_orig = depth.shape
+        fine_h, fine_w = H_orig // 4, W_orig // 4  # 120×160 for 480×640 input
+
+        # Use raw depth channel (Ch 0)
+        depth_raw = depth[:, 0:1, :, :]  # (B, 1, H, W)
+        depth_fine = F.interpolate(
+            depth_raw, size=(fine_h, fine_w), mode='nearest'
+        ).squeeze(1)  # (B, fine_h, fine_w)
+
+        # Scale intrinsics to 1/4
+        intr_d = intrinsic_depth.clone()
+        intr_d[:, 0, 0] *= 0.25
+        intr_d[:, 1, 1] *= 0.25
+        intr_d[:, 0, 2] *= 0.25
+        intr_d[:, 1, 2] *= 0.25
+        intr_r = intrinsic_rgb.clone()
+        intr_r[:, 0, 0] *= 0.25
+        intr_r[:, 1, 1] *= 0.25
+        intr_r[:, 0, 2] *= 0.25
+        intr_r[:, 1, 2] *= 0.25
+
+        # Current pose → 4×4 matrix
+        q_cur, t_cur = current_pose[:, :4], current_pose[:, 4:7]
+        T_cur = self._vectorized_poses_to_matrices(
+            q_cur.unsqueeze(1), t_cur.unsqueeze(1)
+        ).squeeze(1)  # (B, 4, 4)
+
+        # Project depth at 1/4 resolution: coords_1_4[p_d] = g(p_d) (RGB coord)
+        projected = self.depth_projector(
+            depth_fine, T_cur.unsqueeze(1), intr_d, intr_r
+        )  # (B, 1, 2, fine_h, fine_w)
+        coords_1_4 = projected[:, 0]  # (B, 2, fine_h, fine_w)
+
+        # ── 2. Warp RGB features onto depth grid (correct direction) ──────
+        u = coords_1_4[:, 0].clamp(0, fine_w - 1) / max(fine_w - 1, 1) * 2 - 1
+        v = coords_1_4[:, 1].clamp(0, fine_h - 1) / max(fine_h - 1, 1) * 2 - 1
+        grid = torch.stack([u, v], dim=-1).clamp(-1.0, 1.0)  # (B, fine_h, fine_w, 2)
+
+        # Pull RGB features to the depth grid: output[p_d] = fmap_rgb[g(p_d)]
+        fmap_rgb_warped = F.grid_sample(
+            self._fmap_rgb_1_4, grid,
+            mode='bilinear', align_corners=True, padding_mode='zeros'
+        )  # (B, fmap_dim, fine_h, fine_w)
+
+        # Validity mask: out-of-bounds projections have no correspondence.
+        # (depth_projector already pushes Z_C<=0 points to -1e4 → out-of-bounds.)
+        inb = ((coords_1_4[:, 0] >= 0) & (coords_1_4[:, 0] <= fine_w - 1) &
+               (coords_1_4[:, 1] >= 0) & (coords_1_4[:, 1] <= fine_h - 1))
+        valid_mask = inb.float().unsqueeze(1)  # (B, 1, fine_h, fine_w)
+
+        # ── 3. Compute residual and similarity (masked) ───────────────────
+        # Same 3D point P across frames → diff ≈ 0, sim ≈ 1 at correct pose.
+        feat_diff = (self._fmap_depth_1_4 - fmap_rgb_warped) * valid_mask
+
+        rgb_norm = F.normalize(self._fmap_rgb_1_4, dim=1)
+        warped_norm = F.normalize(fmap_rgb_warped, dim=1)
+        similarity = ((rgb_norm * warped_norm).sum(dim=1, keepdim=True)) * valid_mask
+
+        # ── 4. Project to corr_dim (stay at 1/4 — no downsample) ──────────
+        diff_proj = self.fine_feat_proj(feat_diff)    # (B, hidden_dim, fine_h, fine_w)
+        sim_proj = self.fine_sim_proj(similarity)      # (B, hidden_dim, fine_h, fine_w)
+        align_feat = torch.cat([diff_proj, sim_proj], dim=1)  # (B, 2*hidden_dim, fine_h, fine_w)
+
+        align_corr = self.fine_corr_proj(align_feat)  # (B, corr_dim, fine_h, fine_w)
+
+        # ── 5. Feed to dedicated 1/4 fine update net (+ own hidden state) ──
+        context_feat_1_4 = self.context_proj_1_4(self._fmap_depth_1_4)
+        pose_delta, hidden_state_fine = self.fine_update_net(
+            align_corr,
+            context_feat_1_4,
+            hidden_state_fine,
+            direction_encoding=None,  # No directional probing in fine stage
+        )
+
+        # ── 6. Apply delta with fine-grained step limits ───────────────────
+        current_pose, rot_vec, dt = self._apply_pose_delta(
+            current_pose, pose_delta,
+            max_rot_step=self.max_rot_step_fine,
+            max_trans_step=self.max_trans_step_fine,
+        )
+
+        return current_pose, hidden_state_fine, rot_vec, dt
 
     def forward(
-        self, 
-        image, 
-        depth, 
-        intrinsic_rgb, 
-        intrinsic_depth, 
+        self,
+        image,
+        depth,
+        intrinsic_rgb,
+        intrinsic_depth,
         init_pose=None,
         return_all_poses=False,
         return_all_deltas=False
     ):
         """
-        Forward pass of RAFT-Pose model.
-        
+        Forward pass of RAFT-Pose model with staged iterative refinement.
+
+        Stage 1 (iterations 0..coarse_iters-1): 1/8 correlation volume + 37-sample probing
+        Stage 2 (iterations coarse_iters..num_iterations-1): 1/4 dynamic feature alignment
+
         Args:
             image: RGB image of shape (B, 3, H, W)
-            depth: Depth map of shape (B, 1, H, W)
+            depth: Depth map of shape (B, 2, H, W)  [raw_depth, inv_depth]
             intrinsic_rgb: RGB camera intrinsic matrix, shape (B, 3, 3)
             intrinsic_depth: Depth camera (LiDAR) intrinsic matrix, shape (B, 3, 3)
             init_pose: Initial pose estimate of shape (B, 7), optional
             return_all_poses: Whether to return all intermediate poses
             return_all_deltas: Whether to return all predicted deltas (rot_vec, dt) per iteration
-        
+
         Returns:
             final_pose: Final pose estimate of shape (B, 7)
             pose_sequence: All intermediate poses (if return_all_poses=True)
@@ -655,33 +798,36 @@ class RAFTPose(nn.Module):
         """
         batch_size = image.shape[0]
         device = image.device
-        
-        # Extract features (use AMP for encoders if enabled)
+
+        # Extract multi-scale features with the SHARED encoder (both frames RGB).
+        # NOTE: names fmap_rgb_* (frame A) / fmap_depth_* (frame B) are kept for
+        # minimal diff, but both are now RGB-appearance features -> RGB<->RGB matching.
+        # depth[:, 0:1] (raw) is consumed by depth_projector in the iteration stages.
         with torch.amp.autocast('cuda', enabled=self.use_amp):
-            fmap_rgb = self.image_encoder(image)  # (B, fmap_dim, H, W)
-            if self.shared_encoder:
-                # Dual encoder: depth has its own encoder (1-channel input)
-                fmap_depth = self.depth_encoder(depth)  # (B, fmap_dim, H, W)
-            else:
-                fmap_depth = self.depth_encoder(depth)  # (B, depth_dim, H, W)
-        # Ensure float32 for correlation and downstream ops
-        fmap_rgb = fmap_rgb.float()
-        fmap_depth = fmap_depth.float()
-        
+            enc_result = self.image_encoder(image)              # frame A RGB
+            fmap_rgb_1_8 = enc_result[0].float()
+            fmap_rgb_1_4 = enc_result[1].float()
+
+            enc_result_d = self.image_encoder(depth[:, 1:4])    # frame B RGB (shared weights)
+            fmap_depth_1_8 = enc_result_d[0].float()
+            fmap_depth_1_4 = enc_result_d[1].float()
+
+        # Save 1/4 features for fine stage
+        self._fmap_rgb_1_4 = fmap_rgb_1_4
+        self._fmap_depth_1_4 = fmap_depth_1_4
+
         if self.shared_encoder:
-            # Same encoder → same feature space, no alignment needed
-            fmap_depth_aligned = fmap_depth
+            fmap_depth_aligned = fmap_depth_1_8
         else:
-            # Align depth features to match RGB feature dimension
-            fmap_depth_aligned = self.depth_feat_align(fmap_depth)  # (B, 256, H, W)
-        
-        context_feat = self.context_proj(fmap_depth)  # (B, context_dim, H, W)
-        
-        # Initialize correlation volume with aligned features
-        if fmap_rgb.shape[2:] != fmap_depth_aligned.shape[2:]:
-            fmap_depth_aligned = F.interpolate(fmap_depth_aligned, size=fmap_rgb.shape[2:], 
+            fmap_depth_aligned = self.depth_feat_align(fmap_depth_1_8)
+
+        context_feat = self.context_proj(fmap_depth_1_8)  # (B, context_dim, H/8, W/8)
+
+        # Initialize correlation volume with aligned 1/8 features
+        if fmap_rgb_1_8.shape[2:] != fmap_depth_aligned.shape[2:]:
+            fmap_depth_aligned = F.interpolate(fmap_depth_aligned, size=fmap_rgb_1_8.shape[2:],
                                                mode='bilinear', align_corners=False)
-        self.initialize_correlation(fmap_rgb, fmap_depth_aligned)
+        self.initialize_correlation(fmap_rgb_1_8, fmap_depth_aligned)
         
         # Initialize pose estimate
         if init_pose is None:
@@ -689,8 +835,9 @@ class RAFTPose(nn.Module):
         else:
             current_pose = init_pose
         
-        # Initialize hidden state for ConvGRU
-        hidden_state = None
+        # Initialize hidden states for ConvGRU
+        hidden_state = None        # coarse stage, 1/8 resolution
+        hidden_state_fine = None   # fine stage, 1/4 resolution (separate)
         
         # Track all poses if requested
         if return_all_poses:
@@ -701,20 +848,34 @@ class RAFTPose(nn.Module):
             rot_vec_sequence = []
             dt_sequence = []
         
-        # Iterative pose refinement (with gradient checkpointing)
+        # Iterative pose refinement — staged: coarse then fine
         for it in range(self.num_iterations):
-            if self.use_checkpoint:
-                current_pose, hidden_state, rot_vec, dt = torch_checkpoint(
-                    self._single_iteration,
-                    current_pose, hidden_state, depth, intrinsic_depth, intrinsic_rgb,
-                    context_feat,
-                    use_reentrant=False
-                )
+            if it < self.coarse_iters:
+                # Stage 1: Coarse — 1/8 correlation + 37-sample probing (existing logic)
+                if self.use_checkpoint:
+                    current_pose, hidden_state, rot_vec, dt = torch_checkpoint(
+                        self._single_iteration,
+                        current_pose, hidden_state, depth, intrinsic_depth, intrinsic_rgb,
+                        context_feat,
+                        use_reentrant=False
+                    )
+                else:
+                    current_pose, hidden_state, rot_vec, dt = self._single_iteration(
+                        current_pose, hidden_state, depth, intrinsic_depth, intrinsic_rgb,
+                        context_feat
+                    )
             else:
-                current_pose, hidden_state, rot_vec, dt = self._single_iteration(
-                    current_pose, hidden_state, depth, intrinsic_depth, intrinsic_rgb,
-                    context_feat
-                )
+                # Stage 2: Fine — 1/4 dynamic feature alignment (own hidden state)
+                if self.use_checkpoint:
+                    current_pose, hidden_state_fine, rot_vec, dt = torch_checkpoint(
+                        self._single_iteration_fine,
+                        current_pose, hidden_state_fine, depth, intrinsic_depth, intrinsic_rgb,
+                        use_reentrant=False
+                    )
+                else:
+                    current_pose, hidden_state_fine, rot_vec, dt = self._single_iteration_fine(
+                        current_pose, hidden_state_fine, depth, intrinsic_depth, intrinsic_rgb
+                    )
 
             # Track deltas (lightweight, outside checkpoint)
             if return_all_deltas:
@@ -874,5 +1035,8 @@ def build_raft_pose(config):
         top_k=config.get('top_k', 3),
         use_checkpoint=config.get('use_checkpoint', False),
         use_amp=config.get('use_amp', False),
-        coarse_to_fine=config.get('coarse_to_fine', False)
+        coarse_to_fine=config.get('coarse_to_fine', False),
+        coarse_iters=config.get('coarse_iters', 3),
+        max_rot_step_fine=config.get('max_rot_step_fine', 0.05),
+        max_trans_step_fine=config.get('max_trans_step_fine', 0.05),
     )

@@ -96,6 +96,9 @@ class BasicEncoder(nn.Module):
 
         self.conv2 = nn.Conv2d(output_dim, output_dim, kernel_size=1)
 
+        # 1/4 resolution projection (layer2 outputs output_dim at H/4)
+        self.conv_1_4 = nn.Conv2d(output_dim, output_dim, kernel_size=1)
+
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
                 nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
@@ -113,25 +116,34 @@ class BasicEncoder(nn.Module):
         return nn.Sequential(*layers)
 
     def forward(self, x):
+        """
+        Extract multi-scale features.
+
+        Returns:
+            feat_1_8: (B, output_dim, H/8, W/8)
+            feat_1_4: (B, output_dim, H/4, W/4)
+        """
         out = self.relu1(self.norm1(self.conv1(x)))
         if self.use_checkpoint:
             out = torch_checkpoint(self.layer1, out, use_reentrant=False)
-            out = torch_checkpoint(self.layer2, out, use_reentrant=False)
-            out = torch_checkpoint(self.layer3, out, use_reentrant=False)
+            feat_1_4 = torch_checkpoint(self.layer2, out, use_reentrant=False)
+            out = torch_checkpoint(self.layer3, feat_1_4, use_reentrant=False)
             out = torch_checkpoint(self.layer4, out, use_reentrant=False)
             out = torch_checkpoint(self.layer5, out, use_reentrant=False)
         else:
             out = self.layer1(out)
-            out = self.layer2(out)
-            out = self.layer3(out)
+            feat_1_4 = self.layer2(out)     # output_dim, H/4, W/4
+            out = self.layer3(feat_1_4)     # output_dim, H/8, W/8
             out = self.layer4(out)
             out = self.layer5(out)
-        
+
         if self.dropout is not None:
             out = self.dropout(out)
-        
-        out = self.conv2(out)
-        return out
+
+        feat_1_8 = self.conv2(out)  # (B, output_dim, H/8, W/8)
+        feat_1_4 = self.conv_1_4(feat_1_4)  # (B, output_dim, H/4, W/4)
+
+        return feat_1_8, feat_1_4
 
 
 class SmallEncoder(nn.Module):
@@ -348,22 +360,28 @@ class ResNet18Encoder(nn.Module):
         if norm_fn == 'instance':
             self._replace_bn_with_instance(self)
         
-        # Output projection: 512 → output_dim
+        # Output projection: 512 → output_dim  (1/8 resolution)
         self.conv_out = nn.Conv2d(512, output_dim, kernel_size=1)
         # Normalize output features for stable correlation computation
         self.out_norm = nn.InstanceNorm2d(output_dim)
         self.out_relu = nn.ReLU(inplace=True)
-        
+
+        # 1/4 resolution feature projection (from layer2's 128ch → output_dim)
+        self.conv_1_4 = nn.Conv2d(128, output_dim, kernel_size=1)
+        self.norm_1_4 = nn.InstanceNorm2d(output_dim)
+        self.relu_1_4 = nn.ReLU(inplace=True)
+
         if dropout > 0:
             self.dropout = nn.Dropout2d(p=dropout)
         else:
             self.dropout = None
-        
-        # Init new layers (layer4, conv_out) — pretrained layers keep their weights
+
+        # Init new layers (layer4, conv_out, conv_1_4) — pretrained layers keep their weights
         for m in self.layer4.modules():
             if isinstance(m, nn.Conv2d):
                 nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
         nn.init.kaiming_normal_(self.conv_out.weight, mode='fan_out', nonlinearity='relu')
+        nn.init.kaiming_normal_(self.conv_1_4.weight, mode='fan_out', nonlinearity='relu')
     
     def _make_no_stride_layer(self, in_planes, out_planes, norm_fn='instance'):
         """Create a ResNet BasicBlock layer with stride=1 (no spatial downsampling)."""
@@ -393,26 +411,33 @@ class ResNet18Encoder(nn.Module):
                 self._replace_bn_with_instance(child)
     
     def forward(self, x):
+        """
+        Extract multi-scale features.
+
+        Returns:
+            feat_1_8: (B, output_dim, H/8, W/8) — coarse features for correlation volume
+            feat_1_4: (B, output_dim, H/4, W/4) — fine features for alignment refinement
+        """
         out = self.conv1(x)
         out = self.bn1(out)
         out = self.relu1(out)
         # No maxpool — total stride = 8
-        
+
         if self.use_checkpoint:
             out = torch_checkpoint(self.layer1, out, use_reentrant=False)
-            out = torch_checkpoint(self.layer2, out, use_reentrant=False)
-            out = torch_checkpoint(self.layer3, out, use_reentrant=False)
+            feat_1_4 = torch_checkpoint(self.layer2, out, use_reentrant=False)
+            out = torch_checkpoint(self.layer3, feat_1_4, use_reentrant=False)
             out = torch_checkpoint(self.layer4, out, use_reentrant=False)
         else:
             out = self.layer1(out)
-            out = self.layer2(out)
-            out = self.layer3(out)
-            out = self.layer4(out)
-        
+            feat_1_4 = self.layer2(out)     # 128ch, H/4, W/4
+            out = self.layer3(feat_1_4)     # 256ch, H/8, W/8
+            out = self.layer4(out)           # 512ch, H/8, W/8
+
         if self.dropout is not None:
             out = self.dropout(out)
-        
-        out = self.conv_out(out)
-        out = self.out_norm(out)
-        out = self.out_relu(out)
-        return out
+
+        feat_1_8 = self.out_relu(self.out_norm(self.conv_out(out)))  # (B, output_dim, H/8, W/8)
+        feat_1_4 = self.relu_1_4(self.norm_1_4(self.conv_1_4(feat_1_4)))  # (B, output_dim, H/4, W/4)
+
+        return feat_1_8, feat_1_4

@@ -531,6 +531,7 @@ def main():
         matcher_blocks=ckpt_args.get("matcher_blocks", 2),
         matcher_ffn_dim=ckpt_args.get("matcher_ffn_dim", 512),
         matcher_dropout=ckpt_args.get("matcher_dropout", 0.1),
+        coarse_iters=ckpt_args.get("coarse_iters", 3),
     )
     # Filter out unexpected keys (e.g., runtime caches like corr_block._cached_*)
     model_state = checkpoint["model_state_dict"]
@@ -539,9 +540,9 @@ def main():
     unexpected = [k for k in model_state if k not in model_keys]
     if unexpected:
         log_print(f"  [Info] Filtering {len(unexpected)} unexpected keys: {unexpected}")
-    missing, _ = model.load_state_dict(filtered_state, strict=True)
+    missing, _ = model.load_state_dict(filtered_state, strict=False)
     if missing:
-        log_print(f"  [Warning] Missing keys: {missing}")
+        log_print(f"  [Warning] Missing keys (using random init): {missing}")
     model = model.to(device)
     model.eval()
 
