@@ -508,6 +508,11 @@ def parse_args():
     parser.add_argument("--compile_mode", type=str, default="reduce-overhead",
                         help="torch.compile mode: 'reduce-overhead' (CUDA graphs, max speedup, "
                              "needs static shapes) or 'default' (safer, fusion only).")
+    parser.add_argument("--freeze_coarse_epochs", type=int, default=0,
+                        help="Freeze the coarse pathway (encoders + pose_update_net) for the "
+                             "first N epochs; train ONLY the fine pathway. The warm-started "
+                             "coarse stays stable while random fine layers learn. "
+                             "Set to 0 to disable. Default: 0")
 
     return parser.parse_args()
 
@@ -687,6 +692,25 @@ def main():
             elif epoch == freeze_encoder_epochs + 1:
                 log_print(f"  [Epoch {epoch}] Encoder UNFROZEN — now training end-to-end")
 
+        # Freeze COARSE pathway for first N epochs — train ONLY the fine pathway
+        # (fine_feat_proj, fine_sim_proj, fine_corr_proj, context_proj_1_4,
+        # fine_update_net). The warm-started coarse (encoders + pose_update_net)
+        # stays frozen so the random fine layers can learn on STABLE features
+        # without corrupting the coarse via gradient backflow.
+        freeze_coarse_epochs = getattr(args, 'freeze_coarse_epochs', 0)
+        if freeze_coarse_epochs > 0:
+            if epoch <= freeze_coarse_epochs:
+                for name, param in model.named_parameters():
+                    # Train fine pathway + conv_1_4 (1/4 projection, missing from
+                    # runs_104 warm-start → must train for fine to get real features)
+                    param.requires_grad = ('fine' in name or 'context_proj_1_4' in name
+                                           or 'conv_1_4' in name)
+                log_print(f"  [Epoch {epoch}] Coarse FROZEN — training ONLY fine pathway")
+            elif epoch == freeze_coarse_epochs + 1:
+                for param in model.parameters():
+                    param.requires_grad = True
+                log_print(f"  [Epoch {epoch}] Coarse UNFROZEN — end-to-end training")
+
         # Train
         train_metrics = train_one_epoch(
             model, train_loader, criterion, optimizer, device, epoch,
@@ -701,12 +725,12 @@ def main():
             delta_loss_weight=delta_loss_weight,
         )
 
-        # Validate
-        # Validate on the unwrapped model (avoid DP batch-split issues on the
-        # possibly small val batch).
-        val_metrics = validate(
-            model.module if isinstance(model, nn.DataParallel) else model,
-            val_loader, criterion, device)
+        # Validate on the RAW (unwrapped) model — avoids DP batch-split issues
+        # AND torch.compile's triton recompilation (which can hit triton bugs on
+        # the val graph). Val is small; no need for compile speedup.
+        _eval_model = model.module if isinstance(model, nn.DataParallel) else model
+        _eval_model = getattr(_eval_model, "_orig_mod", _eval_model)  # unwrap compile
+        val_metrics = validate(_eval_model, val_loader, criterion, device)
 
         # Scheduler step
         if scheduler is not None:

@@ -323,9 +323,10 @@ class ResNet18Encoder(nn.Module):
     Output: (B, output_dim, H/8, W/8)
     """
     def __init__(self, output_dim=256, norm_fn='instance', dropout=0.0, in_feat=3,
-                 pretrained=True, use_checkpoint=False):
+                 pretrained=True, use_checkpoint=False, return_1_4=True):
         super(ResNet18Encoder, self).__init__()
         self.use_checkpoint = use_checkpoint
+        self.return_1_4 = return_1_4
         
         # Load pretrained ResNet-18
         weights = tv_models.ResNet18_Weights.IMAGENET1K_V1 if pretrained else None
@@ -438,6 +439,8 @@ class ResNet18Encoder(nn.Module):
             out = self.dropout(out)
 
         feat_1_8 = self.out_relu(self.out_norm(self.conv_out(out)))  # (B, output_dim, H/8, W/8)
-        feat_1_4 = self.relu_1_4(self.norm_1_4(self.conv_1_4(feat_1_4)))  # (B, output_dim, H/4, W/4)
 
-        return feat_1_8, feat_1_4
+        if self.return_1_4:
+            feat_1_4 = self.relu_1_4(self.norm_1_4(self.conv_1_4(feat_1_4)))
+            return feat_1_8, feat_1_4
+        return feat_1_8, None  # depth_encoder: skip 1/4 to save activations
