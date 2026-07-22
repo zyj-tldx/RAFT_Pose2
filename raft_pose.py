@@ -633,6 +633,7 @@ class RAFTPose(nn.Module):
         intrinsic_rgb, 
         intrinsic_depth, 
         init_pose=None,
+        num_iterations=None,
         return_all_poses=False,
         return_all_deltas=False
     ):
@@ -701,8 +702,10 @@ class RAFTPose(nn.Module):
             rot_vec_sequence = []
             dt_sequence = []
         
+        if num_iterations is None:
+            num_iterations = self.num_iterations
         # Iterative pose refinement (with gradient checkpointing)
-        for it in range(self.num_iterations):
+        for it in range(num_iterations):
             if self.use_checkpoint:
                 current_pose, hidden_state, rot_vec, dt = torch_checkpoint(
                     self._single_iteration,

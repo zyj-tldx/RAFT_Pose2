@@ -157,6 +157,7 @@ def build_model(args):
         use_checkpoint=getattr(args, 'use_checkpoint', False),
         use_amp=getattr(args, 'use_amp', False),
         coarse_to_fine=getattr(args, 'coarse_to_fine', False),
+        top_k=getattr(args, 'top_k', 3),
         corr_temperature=getattr(args, 'corr_temperature', 1.0),
         max_rot_step=getattr(args, 'max_rot_step', 0.3),
         max_trans_step=getattr(args, 'max_trans_step', 0.3),
@@ -467,6 +468,10 @@ def parse_args():
     parser.add_argument("--use_checkpoint", action="store_true",
                         help="Enable gradient checkpointing on encoders for ~50%% activation memory reduction")
     parser.add_argument("--coarse_to_fine", action="store_true",
+                        help="Use coarse-to-fine correlation sampling: evaluate all N samples on "
+                             "coarsest pyramid level first, then full multi-level sampling on top-K only. "
+                             "Reduces peak memory from O(B*N) to O(B*K) for fine sampling.")
+    parser.add_argument("--top_k", type=int, default=3,
                         help="Use coarse-to-fine correlation sampling: evaluate all N samples on "
                              "coarsest pyramid level first, then full multi-level sampling on top-K only. "
                              "Reduces peak memory from O(B*N) to O(B*K) for fine sampling.")

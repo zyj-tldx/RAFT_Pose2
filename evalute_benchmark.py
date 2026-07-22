@@ -193,6 +193,43 @@ BENCHMARK_GROUPS = {
 }
 
 
+def _derive_clean_val_sequences():
+    """Derive per-scene HELD-OUT val sequences from the training configs.
+
+    Reads val_samples/train_samples from both 7Scenes and TartanAir configs and
+    keeps, per scene, only sequences present in val AND absent from train — i.e.
+    true sequence-level hold-outs (leakage-free). Scenes with no such sequence
+    (e.g. heads: all seqs in train; TartanAir: val/train share sequences) are
+    omitted, so --clean naturally skips them.
+
+    The default benchmark evaluates on ALL sequences incl. train ones whose
+    frames appear in train_samples (data leakage, inflates numbers ~1.7x).
+    --clean restricts to these held-out sequences for a fair generalization
+    measurement. Must stay in sync with the training configs' val split.
+    """
+    holdout = {}
+    for cfg_path in ("configs/allscenes_train.json", "configs/tart_scenes_train.json"):
+        try:
+            with open(cfg_path) as f:
+                c = json.load(f)
+        except (FileNotFoundError, OSError):
+            continue
+        train_seqs, val_seqs = {}, {}
+        for s in c.get("train_samples", []):
+            train_seqs.setdefault(s["image"]["scene"], set()).add(s["image"]["seq"])
+        for s in c.get("val_samples", []):
+            val_seqs.setdefault(s["image"]["scene"], set()).add(s["image"]["seq"])
+        for scene, vs in val_seqs.items():
+            clean = sorted(v for v in vs if v not in train_seqs.get(scene, set()))
+            if clean:
+                holdout[scene] = clean
+    return holdout
+
+
+# scene -> list of held-out val sequences (true sequence-level hold-outs only)
+VAL_SEQUENCES = _derive_clean_val_sequences()
+
+
 # ─── Data Loading ──────────────────────────────────────────────────────────────
 
 class BenchmarkDataset(torch.utils.data.Dataset):
@@ -304,6 +341,7 @@ class BenchmarkDataset(torch.utils.data.Dataset):
         return len(self.samples)
 
     def _load_image(self, scene, seq, frame):
+        # Frame A RGB (3, H, W), normalized [0,1].
         path = os.path.join(self.dataset_root, scene, seq, f"color_{frame}.png")
         img = Image.open(path).convert("RGB")
         img = img.resize((self.image_size[1], self.image_size[0]), Image.BILINEAR)
@@ -477,6 +515,12 @@ def load_model_for_eval(checkpoint_path, device, overrides=None):
 
     # Load weights with compatibility handling
     model_state = checkpoint["model_state_dict"]
+    # Strip torch.compile's '_orig_mod.' prefix if the checkpoint was saved
+    # from a compiled model (keys like '_orig_mod.image_encoder...').
+    if any(k.startswith("_orig_mod.") for k in model_state):
+        model_state = {(k[10:] if k.startswith("_orig_mod.") else k): v
+                       for k, v in model_state.items()}
+        print("  [Compat] Stripped _orig_mod. prefix (torch.compile checkpoint)")
     new_state = model.state_dict()
 
     # Filter mismatched shapes
@@ -812,6 +856,12 @@ Available benchmarks: 7scenes_chess, 7scenes_fire, 7scenes_heads, 7scenes_office
     parser.add_argument("--image_encoder", type=str, default=None)
     parser.add_argument("--shared_encoder", action="store_true", default=None)
     parser.add_argument("--matcher_type", type=str, default=None)
+    parser.add_argument("--clean", action="store_true",
+                        help="Evaluate ONLY on held-out val sequences (per-scene sequences "
+                             "in val_samples but NOT train_samples). Avoids the ~1.7x "
+                             "inflation from training-frame leakage in the default "
+                             "(all-sequences) benchmark. Scenes with no clean hold-out "
+                             "(heads, TartanAir) are skipped automatically.")
 
     return parser.parse_args()
 
@@ -878,7 +928,10 @@ def main():
     if args.output_dir:
         output_dir = Path(args.output_dir)
     else:
-        output_dir = Path(args.checkpoint).parent / "benchmark_eval"
+        # --clean writes to a separate dir so it never clobbers the default
+        # (all-sequences) benchmark report.
+        subdir = "benchmark_eval_clean" if args.clean else "benchmark_eval"
+        output_dir = Path(args.checkpoint).parent / subdir
     output_dir.mkdir(parents=True, exist_ok=True)
     print(f"Output directory: {output_dir}")
 
@@ -900,10 +953,16 @@ def main():
             )
         else:
             bdef = bench["definition"]
+            # --clean: restrict to held-out val sequences (leakage-free). Scenes
+            # with no clean hold-out get [] -> skipped by the len==0 check below.
+            seqs = bdef["sequences"]
+            if args.clean:
+                seqs = VAL_SEQUENCES.get(bdef["scene"], [])
+                print(f"  [--clean] {bdef['scene']}: held-out val seqs = {seqs}")
             dataset = BenchmarkDataset(
                 dataset_root=bdef["dataset_root"],
                 scene=bdef["scene"],
-                sequences=bdef["sequences"],
+                sequences=seqs,
                 camera_intrinsics=bdef["camera_intrinsics"],
                 image_size=bdef["image_size"],
                 depth_scale=bdef["depth_scale"],
